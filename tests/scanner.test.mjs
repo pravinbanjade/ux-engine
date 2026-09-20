@@ -68,6 +68,24 @@ test('scanRepo works on a css-in-js repo with no CSS token file', () => {
   assert.ok(findings.some((f) => f.file === 'src/components/Offender.tsx'));
 });
 
+test('declaring a JS/TS theme file as the token source excludes it from scanning', () => {
+  const root = fixture('styled-components');
+  // The fixture's theme.ts is not detected as a token source (buildProfile
+  // only ever populates styling.tokenSource from .css files), so without an
+  // override it gets scanned like any other file and its own token
+  // definitions come back as false-positive findings. Declaring it via the
+  // override that detection.md now instructs a human to record is the fix,
+  // and it requires no scanner change: the exclusion logic already keys off
+  // every entry in profile.styling.tokenSource.
+  const profile = buildProfile(root, {
+    overrides: { 'styling.tokenSource': ['src/theme.ts'], 'styling.tokenSyntax': 'js-object' },
+  });
+  const { findings } = scanRepo(root, profile, {});
+  assert.deepEqual(findings.filter((f) => f.file === 'src/theme.ts'), []);
+  const offender = findings.filter((f) => f.file === 'src/components/Offender.tsx');
+  assert.deepEqual(offender.map((f) => f.id).sort(), ['UX-101', 'UX-102', 'UX-103']);
+});
+
 test('a finding with no near token says so instead of proposing one', () => {
   const root = fixture('tailwind-shadcn');
   const { findings } = scanRepo(root, buildProfile(root), {});

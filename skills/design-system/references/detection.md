@@ -47,6 +47,22 @@ to `resolvedByHuman` as well — re-running detection will otherwise try to
 re-extract `tokens` from CSS and find nothing, since the extractor only
 reads CSS custom properties out of `.css` files.
 
+Also add the theme file's own path to `styling.tokenSource` (it's an array —
+append to it rather than replacing it if other files are already listed),
+and add `"styling.tokenSource"` and `"styling.tokenSyntax"` to
+`resolvedByHuman` alongside `"tokens"`. This step is not optional bookkeeping:
+the off-system value scanner (Task 12) excludes every file listed in
+`tokenSource` from scanning, on the theory that a token source defines the
+on-system values rather than using them. A JS/TS theme file left out of
+`tokenSource` gets scanned like any other component file, and every literal
+colour, length or duration inside it — which is to say, the project's actual
+token *definitions* — gets reported back to the user as an off-system value
+mistake. That is a false positive on the most authoritative file in the
+project, not a missed edge case, so leaving the theme file unlisted is a
+detection bug, not a simplification. Listing it in `tokenSource` also adds it
+to `derivedFrom`, so an edit to the theme file correctly marks the profile
+stale on the next check, the same as an edit to a CSS token file would.
+
 ## `confidence.components` is low
 
 This happens only when `components.dir` came back `null`, which in turn

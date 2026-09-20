@@ -12,10 +12,25 @@ const SCAN_EXTENSIONS = ['.tsx', '.jsx', '.ts', '.js', '.vue', '.svelte', '.css'
 // resolves. No bare/unitless form is included: an unsuffixed number is far
 // too common in ordinary code to treat as a literal design value.
 const NUMBER = String.raw`[+-]?(?:\d+\.\d+|\.\d+|\d+)`;
-// (?<![\w.]) / (?!\w) stand in for \b at a boundary that may be a '.' (so a
-// leading-dot decimal like ".5rem" is still found), without matching a
-// number embedded inside a longer identifier or number.
-const NOT_BEFORE = String.raw`(?<![\w.])`;
+// \b doesn't work as the left boundary here: a leading-dot decimal like
+// ".5rem" needs to match right after a space, but '.' and ' ' are both
+// non-word characters, so there is no \w/\W transition there for \b to
+// fire. (?<![\w.-]) stands in for it instead, and deliberately also
+// excludes a *preceding* hyphen: without that, "p-2em" (a hyphen-joined
+// identifier, e.g. a Tailwind arbitrary-value class name) would have its
+// "-" mistaken for the sign of a literal "-2em" as soon as the engine tried
+// starting a match at the digit right after the hyphen. A real negative
+// literal is unaffected by this, because its sign is the first character
+// *of* the match — e.g. in "margin: -17px", the lookbehind is checked
+// against the space before the "-", not against another hyphen — so this
+// only refuses to treat a hyphen glued to a preceding identifier as a sign.
+// (?!\w) on the right plays the same role for the closing boundary, and
+// rejects a number/unit that is itself glued to further identifier
+// characters (so "abc123px" and "x1.5rem" don't match either). A hex
+// string like "#3b7d4f" is untouched by either of these: its trailing "4f"
+// is never even offered to this pattern, since nothing in it forms a
+// px/rem/em/s unit for a preceding number to attach to.
+const NOT_BEFORE = String.raw`(?<![\w.-])`;
 const NOT_AFTER = String.raw`(?!\w)`;
 
 const PATTERNS = [
