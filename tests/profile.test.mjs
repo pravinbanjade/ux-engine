@@ -4,7 +4,7 @@ import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildProfile, scoreConfidence } from '../scripts/lib/profile.mjs';
+import { buildProfile, scoreConfidence, setPath, getPath } from '../scripts/lib/profile.mjs';
 
 const fixture = (n) => fileURLToPath(new URL(`../tests/fixtures/${n}/`, import.meta.url));
 const snapshot = (n) => fileURLToPath(new URL(`../tests/snapshots/${n}.profile.json`, import.meta.url));
@@ -136,6 +136,67 @@ test('a group touched by an override scores high even when detection alone would
 
     assert.equal(p.styling.system, 'a-hand-named-approach');
     assert.equal(p.confidence.styling, 'high');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('setPath refuses __proto__, prototype and constructor segments and never touches Object.prototype', () => {
+  const beforeNames = Object.getOwnPropertyNames(Object.prototype);
+
+  // Each of these would have polluted Object.prototype before the segment guard existed:
+  // this exact call previously made ({}).polluted === 'yes' for the rest of the process.
+  assert.equal(setPath({ styling: {} }, '__proto__.polluted', 'yes'), false);
+  assert.equal(setPath({}, 'a.prototype.b', 'yes'), false);
+  assert.equal(setPath({}, 'constructor.polluted2', 'yes'), false);
+
+  assert.equal(({}).polluted, undefined);
+  assert.equal(({}).polluted2, undefined);
+  assert.deepEqual(Object.getOwnPropertyNames(Object.prototype), beforeNames);
+
+  // A legitimate path still works.
+  const obj = {};
+  assert.equal(setPath(obj, 'components.dir', 'src/ui'), true);
+  assert.equal(obj.components.dir, 'src/ui');
+});
+
+test('getPath refuses __proto__, prototype and constructor segments', () => {
+  assert.equal(getPath({}, '__proto__.polluted'), undefined);
+  assert.equal(getPath({}, 'a.prototype.b'), undefined);
+  assert.equal(getPath({}, 'constructor.name'), undefined);
+  assert.equal(getPath({ a: { b: 'value' } }, 'a.b'), 'value');
+});
+
+test('buildProfile refuses a dangerous override path even if a caller bypasses the allowlist', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-'));
+  try {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'scratch', private: true }));
+
+    const p = buildProfile(root, { now: NOW, overrides: { '__proto__.polluted': 'yes' } });
+
+    assert.equal(({}).polluted, undefined);
+    assert.equal(p.polluted, undefined);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an override for styling.tokenSource that is not an array of strings is ignored, not a crash', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-'));
+  try {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'scratch', private: true }));
+    mkdirSync(join(root, 'src/styles'), { recursive: true });
+    writeFileSync(
+      join(root, 'src/styles/app.css'),
+      ':root {\n  --color-primary: #111111;\n  --color-secondary: #222222;\n  --spacing-1: 4px;\n}\n',
+    );
+
+    // Before this validation, buildProfile would iterate the characters of this string
+    // as if each were a filename and call readFileSync on them, crashing hard.
+    const p = buildProfile(root, { now: NOW, overrides: { 'styling.tokenSource': 'not-an-array' } });
+
+    assert.deepEqual(p.styling.tokenSource, ['src/styles/app.css']);
+    assert.equal(p.tokens.color['--color-primary'], '#111111');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

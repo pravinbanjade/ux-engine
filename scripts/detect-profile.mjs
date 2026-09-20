@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { buildProfile, isValidProfileShape } from './lib/profile.mjs';
+import { buildProfile, isValidProfileShape, getPath, RESOLVABLE_FIELDS } from './lib/profile.mjs';
 
 const args = process.argv.slice(2);
 const root = resolve(args.find((a) => !a.startsWith('--')) ?? '.');
@@ -19,16 +19,21 @@ function readExistingProfile(path) {
   return isValidProfileShape(parsed) ? parsed : null;
 }
 
-function getPath(obj, path) {
-  return path.split('.').reduce((cur, key) => (cur == null ? undefined : cur[key]), obj);
-}
-
 // Re-detection must not clobber a field a human already answered. If a
 // usable profile is already on disk, re-derive an `overrides` map from
 // whatever it recorded in `resolvedByHuman`, using that profile's own
 // current values — never guessing, never asking again. An unreadable or
 // structurally invalid existing profile is treated exactly like no profile
 // at all: detect fresh rather than fail.
+//
+// `resolvedByHuman` is untrusted input: a committed profile.json can be
+// edited by anyone with a pull request. Every path is checked against
+// RESOLVABLE_FIELDS — the exact set of fields the design-system skill ever
+// asks a human about — before its value is ever read. This is what keeps
+// `derivedFrom` (staleness depends on it being computed fresh, never
+// overridden) and anything aimed at the prototype chain out of `overrides`
+// in the first place; getPath/setPath's own segment guard is the backstop
+// behind this, not the primary defence.
 const existing = readExistingProfile(out);
 const candidatePaths = Array.isArray(existing?.resolvedByHuman)
   ? existing.resolvedByHuman.filter((p) => typeof p === 'string')
@@ -37,6 +42,10 @@ const candidatePaths = Array.isArray(existing?.resolvedByHuman)
 const overrides = {};
 const resolvedByHuman = [];
 for (const path of candidatePaths) {
+  if (!RESOLVABLE_FIELDS.has(path)) {
+    console.warn(`ux-engine: ignoring resolvedByHuman entry outside the allowed field list: ${path}`);
+    continue;
+  }
   const value = getPath(existing, path);
   if (value !== undefined) {
     overrides[path] = value;

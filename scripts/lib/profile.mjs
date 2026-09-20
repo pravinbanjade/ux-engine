@@ -28,9 +28,59 @@ export function scoreConfidence(profile) {
   return { styling, components, conventions };
 }
 
+// The only fields a human can ever answer through `resolvedByHuman` /
+// `overrides`. Anything else — in particular `derivedFrom`, which staleness
+// detection depends on being computed fresh every time, and anything
+// touching the prototype chain — is not on this list and must be rejected
+// by callers before it ever reaches buildProfile.
+export const RESOLVABLE_FIELDS = new Set([
+  'styling.system',
+  'styling.tokenSource',
+  'styling.tokenSyntax',
+  'styling.utilityFirst',
+  'components.dir',
+  'components.library',
+  'components.variantMechanism',
+  'components.primitives',
+  'conventions.framework',
+  'conventions.router',
+  'conventions.testRunner',
+  'conventions.iconSet',
+  'conventions.a11yTarget',
+  'tokens',
+  ...TOKEN_KINDS.map((kind) => `tokens.${kind}`),
+]);
+
+// A dotted path containing any of these segments can walk onto the
+// prototype chain: `cur['__proto__']` (or `.prototype` / `.constructor`) on
+// a plain object literal resolves through inherited accessors rather than
+// an own property, so a naive "is this already an object?" check does not
+// catch it. Any path containing one of these segments is refused outright,
+// not partially applied.
+const DANGEROUS_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor']);
+
+function hasDangerousSegment(path) {
+  return path.split('.').some((segment) => DANGEROUS_SEGMENTS.has(segment));
+}
+
+function isStringArray(value) {
+  return Array.isArray(value) && value.every((v) => typeof v === 'string');
+}
+
+// Reads a dotted path ("components.dir") off an object. Refuses outright —
+// returning undefined without touching the object — if any segment is
+// __proto__, prototype or constructor.
+export function getPath(obj, path) {
+  if (hasDangerousSegment(path)) return undefined;
+  return path.split('.').reduce((cur, key) => (cur == null ? undefined : cur[key]), obj);
+}
+
 // Sets a dotted path ("components.variantMechanism") on an object, creating
-// intermediate objects as needed.
-function setPath(obj, path, value) {
+// intermediate objects as needed. Refuses outright — writing nothing — if
+// any segment is __proto__, prototype or constructor. Returns whether the
+// write happened, so a caller can tell a refusal from a successful write.
+export function setPath(obj, path, value) {
+  if (hasDangerousSegment(path)) return false;
   const parts = path.split('.');
   let cur = obj;
   for (let i = 0; i < parts.length - 1; i++) {
@@ -39,6 +89,7 @@ function setPath(obj, path, value) {
     cur = cur[key];
   }
   cur[parts[parts.length - 1]] = value;
+  return true;
 }
 
 // buildProfile is a pure function of (root, now, overrides): it never reads
@@ -56,10 +107,31 @@ export function buildProfile(root, { now = new Date().toISOString(), overrides =
   const components = detectComponents(root, deps);
   const conventions = detectConventions(deps);
 
+  // Defence in depth: callers (see detect-profile.mjs) are expected to have
+  // already filtered `overrides` against RESOLVABLE_FIELDS, but buildProfile
+  // never trusts that blindly — a dotted path is dropped here too, before
+  // it can reach setPath or influence which confidence group gets bumped.
+  const safeOverrides = {};
+  for (const [path, value] of Object.entries(overrides)) {
+    if (hasDangerousSegment(path)) {
+      console.warn(`ux-engine: refusing override path "${path}" (touches __proto__/prototype/constructor)`);
+      continue;
+    }
+    safeOverrides[path] = value;
+  }
+
+  // A wrongly-typed styling.tokenSource would otherwise make the loop below
+  // iterate a string's characters and call readFileSync on each one — a bad
+  // hand edit becoming a hard crash. Ignore it and fall back to detection.
+  if ('styling.tokenSource' in safeOverrides && !isStringArray(safeOverrides['styling.tokenSource'])) {
+    console.warn('ux-engine: ignoring styling.tokenSource override — expected an array of strings, using detected value');
+    delete safeOverrides['styling.tokenSource'];
+  }
+
   // A human-corrected token source takes effect immediately: it changes
   // which files get scanned for tokens and which files this profile
   // depends on for staleness checks, not just the recorded field.
-  const tokenSource = overrides['styling.tokenSource'] ?? styling.tokenSource;
+  const tokenSource = safeOverrides['styling.tokenSource'] ?? styling.tokenSource;
 
   let props = {};
   for (const file of tokenSource) {
@@ -83,13 +155,13 @@ export function buildProfile(root, { now = new Date().toISOString(), overrides =
     conventions,
   };
 
-  for (const [path, value] of Object.entries(overrides)) setPath(profile, path, value);
+  for (const [path, value] of Object.entries(safeOverrides)) setPath(profile, path, value);
 
   profile.confidence = scoreConfidence(profile);
 
   // A human answer is authoritative: any group touched by an override scores
   // high, regardless of what the automatic detectors alone would say.
-  const resolvedGroups = new Set(Object.keys(overrides).map((path) => path.split('.')[0]));
+  const resolvedGroups = new Set(Object.keys(safeOverrides).map((path) => path.split('.')[0]));
   for (const group of resolvedGroups) {
     if (group in profile.confidence) profile.confidence[group] = 'high';
   }
