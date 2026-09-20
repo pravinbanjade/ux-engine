@@ -81,3 +81,62 @@ test('buildProfile merges tokens from every stylesheet in tokenSource, later fil
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('buildProfile applies overrides and leaves everything else detected', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-'));
+  try {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'scratch', private: true }));
+
+    const p = buildProfile(root, {
+      now: NOW,
+      overrides: { 'components.dir': 'src/widgets', 'components.variantMechanism': 'a-custom-switch' },
+    });
+
+    assert.equal(p.components.dir, 'src/widgets');
+    assert.equal(p.components.variantMechanism, 'a-custom-switch');
+    // Untouched groups still reflect plain detection: no manifest deps, no stylesheets.
+    assert.equal(p.styling.system, null);
+    assert.equal(p.conventions.framework, null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an overridden styling.tokenSource is honoured for extraction and staleness, not just recorded', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-'));
+  try {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'scratch', private: true }));
+    mkdirSync(join(root, 'src/styles'), { recursive: true });
+    // A .scss extension: detectStyling's walkFiles only looks at .css, so automatic
+    // detection would never find this file on its own.
+    writeFileSync(
+      join(root, 'src/styles/tokens.scss'),
+      ':root {\n  --color-primary: #111111;\n  --color-secondary: #222222;\n  --spacing-1: 4px;\n}\n',
+    );
+
+    const p = buildProfile(root, { now: NOW, overrides: { 'styling.tokenSource': ['src/styles/tokens.scss'] } });
+
+    assert.deepEqual(p.styling.tokenSource, ['src/styles/tokens.scss']);
+    assert.equal(p.tokens.color['--color-primary'], '#111111');
+    assert.ok(p.derivedFrom.some((e) => e.path === 'src/styles/tokens.scss'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a group touched by an override scores high even when detection alone would call it medium', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-'));
+  try {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'scratch', private: true }));
+
+    // No stylesheets at all, so scoreConfidence alone would see a truthy `system` with
+    // zero tokens and call this 'medium' — proving the 'high' below comes from the
+    // override bump, not from scoreConfidence happening to agree.
+    const p = buildProfile(root, { now: NOW, overrides: { 'styling.system': 'a-hand-named-approach' } });
+
+    assert.equal(p.styling.system, 'a-hand-named-approach');
+    assert.equal(p.confidence.styling, 'high');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

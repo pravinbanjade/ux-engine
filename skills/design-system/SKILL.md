@@ -16,11 +16,16 @@ the right order, resolve what they could not, and explain the result.
 1. **Check for existing artifacts.**
    Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/check-profile.mjs <repo-root>` and
    act on its exit code:
-   - **0** — a current profile exists. Ask whether to re-detect. If the user
-     declines, skip straight to step 5 and (re)write `DESIGN.md` from the
-     profile that is already there.
+   - **0** — a current profile exists. Ask whether to re-detect. Re-detection
+     is safe either way: it refreshes every field except the ones listed in
+     the profile's `resolvedByHuman` array, which are carried forward
+     unchanged. If the user declines anyway, skip straight to step 5 and
+     (re)write `DESIGN.md` from the profile that is already there.
    - **2** — stale. The script prints which source files changed since the
-     profile was generated. Continue to step 2 — you are refreshing it.
+     profile was generated. Continue to step 2 to refresh it — this, too, is
+     safe: `detect-profile.mjs` re-derives every `resolvedByHuman` field from
+     the current profile before it overwrites anything, so a stale source
+     file changing never undoes a human's answer.
    - **3** — no usable profile. This covers both "the file is absent" and
      "the file exists but is not a valid profile" (unparseable JSON, not a
      JSON object, a missing or non-numeric `version`, or a `derivedFrom` that
@@ -39,20 +44,25 @@ the right order, resolve what they could not, and explain the result.
 
 3. **Resolve low-confidence fields — ask, never guess.**
    For each field the script reported as low, ask the user one question, then
-   write the answer into `.ux-engine/profile.json` by hand. See
-   `references/detection.md` for the question to ask per field. Asking once and
-   recording the answer is the whole point: it is never asked again.
+   write the answer into `.ux-engine/profile.json` by hand — see
+   `references/detection.md` for the question to ask per field — **and add
+   that field's dotted path to the profile's `resolvedByHuman` array** (create
+   the array if it doesn't exist yet, e.g. `["components.variantMechanism"]`).
+   That array is what makes "asked once, never asked again" actually true:
+   every future run of `detect-profile.mjs` reads it back and carries the
+   answer forward instead of overwriting it with a fresh guess.
 
 4. **Sanity-check what was detected.**
    Read the profile. If `tokens` is empty but the repo plainly has colours and
    spacing in its components, the automatic extraction missed the real
-   stylesheet(s) — find them, set `styling.tokenSource` to the correct array
-   of paths (a project can split its tokens across more than one file), and
-   transcribe the token values into `tokens` by hand. Do not re-run
-   `detect-profile.mjs` to pick this up: it recomputes the whole profile from
-   a fresh filesystem scan every time and does not read the existing file, so
-   it would silently discard this correction and everything you wrote in
-   step 3.
+   stylesheet(s) — find them and correct `styling.tokenSource` to the right
+   array of paths (a project can split its tokens across more than one file).
+   Add `"styling.tokenSource"` to `resolvedByHuman` the same way step 3 does.
+   You can now safely re-run `detect-profile.mjs` afterward: it re-extracts
+   `tokens` from the corrected file(s) itself, so you no longer need to
+   transcribe values by hand unless the tokens genuinely live outside CSS
+   (a JS/TS object) — in that case, still write `tokens` by hand and add
+   `"tokens"` to `resolvedByHuman` too.
 
 5. **Write DESIGN.md.**
    Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/write-design-doc.mjs <repo-root>`.
