@@ -1,8 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { buildProfile } from '../scripts/lib/profile.mjs';
-import { renderDesignDoc, extractExceptions } from '../scripts/lib/design-doc.mjs';
+import { renderDesignDoc, extractExceptions, extractUnknownSections } from '../scripts/lib/design-doc.mjs';
 
 const fixture = (n) => fileURLToPath(new URL(`../tests/fixtures/${n}/`, import.meta.url));
 const doc = renderDesignDoc(buildProfile(fixture('tailwind-shadcn'), { now: '2026-01-01T00:00:00.000Z' }));
@@ -34,4 +38,134 @@ test('extractExceptions preserves hand-written content', () => {
 
 test('extractExceptions returns the placeholder when the section is absent', () => {
   assert.match(extractExceptions('# Design System\n'), /None recorded/);
+});
+
+test('extractUnknownSections returns unknown sections in original order', () => {
+  const doc = `# Design System
+
+## Tokens
+old
+
+## Custom Notes
+Important notes here
+
+## Components
+old
+
+## Accessibility
+WCAG 2.1 AAA target
+
+## Conventions
+old
+
+## Deliberate Exceptions
+old
+`;
+  const unknown = extractUnknownSections(doc);
+  assert.match(unknown, /## Custom Notes/);
+  assert.match(unknown, /## Accessibility/);
+  assert.match(unknown, /Important notes here/);
+  assert.match(unknown, /WCAG 2.1 AAA target/);
+  // Verify order is preserved
+  assert.ok(unknown.indexOf('Custom Notes') < unknown.indexOf('Accessibility'));
+});
+
+test('unknown sections survive a regenerate round-trip', () => {
+  const profile = buildProfile(fixture('tailwind-shadcn'), { now: '2026-01-01T00:00:00.000Z' });
+  const original = renderDesignDoc(profile, undefined, '## Custom Notes\n\nDo not modify.');
+
+  // Extract and regenerate
+  const unknown = extractUnknownSections(original);
+  const regenerated = renderDesignDoc(profile, undefined, unknown);
+
+  assert.match(regenerated, /## Custom Notes/);
+  assert.match(regenerated, /Do not modify/);
+});
+
+test('a ## heading inside a fenced code block is not mistaken for the exceptions heading', () => {
+  const doc = `# Design System
+
+## Tokens
+old
+
+## Deliberate Exceptions
+Codeblock below shows structure:
+\`\`\`
+## Deliberate Exceptions
+{
+  "note": "value"
+}
+\`\`\`
+
+This is the real content.`;
+
+  const exceptions = extractExceptions(doc);
+  assert.match(exceptions, /Codeblock below/);
+  assert.match(exceptions, /This is the real content/);
+  // Should not include the code block's ## line as a separate section
+  assert.ok(exceptions.includes('```'));
+});
+
+test('token values with pipes and backticks render as single intact rows', () => {
+  const testTokens = {
+    'grid-template': 'repeat(12, 1fr) | auto-fit',
+    'gradient': 'linear-gradient(45deg, `color-1`, `color-2`)',
+  };
+  const table = renderDesignDoc({
+    generatedAt: '2026-01-01',
+    styling: { tokenSource: [], tokenSyntax: 'css' },
+    components: { dir: null, variantMechanism: 'cva' },
+    conventions: { a11yTarget: 'WCAG 2.1 AA' },
+    tokens: { color: testTokens },
+  }).split('\n');
+
+  // Find the table rows (skip header rows)
+  const rows = table.filter(r => r.includes('grid-template') || r.includes('gradient'));
+  assert.equal(rows.length, 2, 'both tokens rendered as rows');
+
+  const pipeRow = rows.find((r) => r.includes('grid-template'));
+  assert.ok(!pipeRow.includes('\n'), `row is a single line: ${pipeRow}`);
+  // GFM escapes a literal pipe inside a cell as \|, which is not a column
+  // separator. Splitting on *unescaped* pipes must still yield exactly the
+  // 2 real cells (3 delimiters: leading, middle, trailing).
+  const unescapedPipes = (pipeRow.match(/(?<!\\)\|/g) || []).length;
+  assert.equal(unescapedPipes, 3, `row has exactly 3 unescaped pipe delimiters (2 cells): ${pipeRow}`);
+  assert.match(pipeRow, /auto-fit/, 'the literal pipe value survived rather than being dropped');
+
+  const backtickRow = rows.find((r) => r.includes('gradient'));
+  assert.ok(!backtickRow.includes('\n'), `row is a single line: ${backtickRow}`);
+  // Internal backticks must be escaped so the outer code span (the two
+  // backticks wrapping the whole value) is not closed early.
+  const unescapedBackticks = (backtickRow.match(/(?<!\\)`/g) || []).length;
+  assert.equal(unescapedBackticks, 2, `only the opening/closing code-span backticks are unescaped: ${backtickRow}`);
+});
+
+test('token values with newlines are collapsed to single spaces', () => {
+  const testTokens = {
+    'multi-line': 'linear-gradient(\n  45deg,\n  red,\n  blue\n)',
+  };
+  const doc = renderDesignDoc({
+    generatedAt: '2026-01-01',
+    styling: { tokenSource: [], tokenSyntax: 'css' },
+    components: { dir: null, variantMechanism: 'cva' },
+    conventions: { a11yTarget: 'WCAG 2.1 AA' },
+    tokens: { color: testTokens },
+  });
+
+  // Value should be on a single line with collapsed whitespace
+  assert.match(doc, /linear-gradient\( 45deg, red, blue \)/);
+});
+
+test('write-design-doc.mjs CLI exits 3 when no profile exists', () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'ux-engine-'));
+  try {
+    const result = spawnSync('node', ['scripts/write-design-doc.mjs', tmpDir], {
+      cwd: fileURLToPath(new URL('..', import.meta.url)),
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 3);
+    assert.match(result.stderr, /No \.ux-engine\/profile\.json/);
+  } finally {
+    rmSync(tmpDir, { recursive: true });
+  }
 });
