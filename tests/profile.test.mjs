@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { buildProfile, scoreConfidence } from '../scripts/lib/profile.mjs';
 
 const fixture = (n) => fileURLToPath(new URL(`../tests/fixtures/${n}/`, import.meta.url));
@@ -46,4 +48,36 @@ test('scoreConfidence reports low for an unknown styling system', () => {
     tokens: { color: {}, spacing: {}, radius: {}, type: {}, shadow: {}, motion: {}, other: {} },
   });
   assert.deepEqual(c, { styling: 'low', components: 'low', conventions: 'low' });
+});
+
+test('buildProfile merges tokens from every stylesheet in tokenSource, later file wins on name collision', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-'));
+  try {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'scratch', private: true }));
+    mkdirSync(join(root, 'src/styles'), { recursive: true });
+    // Alphabetically first: walkFiles sorts, so this file's props are spread first.
+    writeFileSync(
+      join(root, 'src/styles/a.css'),
+      ':root {\n  --color-primary: #111111;\n  --color-secondary: #222222;\n  --spacing-1: 4px;\n}\n',
+    );
+    // Alphabetically second: spread later, so it wins on the shared property name.
+    writeFileSync(
+      join(root, 'src/styles/b.css'),
+      ':root {\n  --color-primary: #ffffff;\n  --color-accent: #333333;\n  --spacing-2: 8px;\n}\n',
+    );
+
+    const p = buildProfile(root, { now: NOW });
+
+    assert.deepEqual(p.styling.tokenSource, ['src/styles/a.css', 'src/styles/b.css']);
+    // Properties unique to each file are both present, proving the merge covers every
+    // entry of tokenSource and not just the first.
+    assert.equal(p.tokens.color['--color-secondary'], '#222222');
+    assert.equal(p.tokens.color['--color-accent'], '#333333');
+    // --color-primary is defined in both files with different values. buildProfile merges
+    // via object spread in tokenSource order, so the later file (b.css) wins. Pinned here
+    // as documented behavior, not left as an accident.
+    assert.equal(p.tokens.color['--color-primary'], '#ffffff');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

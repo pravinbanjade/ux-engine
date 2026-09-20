@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { extractCustomProperties, groupTokens, TOKEN_KINDS } from './tokens.mjs';
-import { readManifest, detectStyling, detectComponents, detectConventions, walkFiles } from './detect.mjs';
+import { readManifest, detectStyling, detectComponents, detectConventions } from './detect.mjs';
 
 export const SCHEMA_VERSION = 1;
 
@@ -61,7 +61,7 @@ export function buildProfile(root, { now = new Date().toISOString() } = {}) {
   return profile;
 }
 
-export function isStale(root, profile) {
+export function stalePaths(root, profile) {
   return profile.derivedFrom
     .filter(({ path, sha256: recorded }) => {
       const full = join(root, path);
