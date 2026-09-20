@@ -1,0 +1,1 @@
+{ "style": "new-york", "tailwind": { "css": "src/styles/app.css" }, "aliases": { "ui": "src/components/ui" } }

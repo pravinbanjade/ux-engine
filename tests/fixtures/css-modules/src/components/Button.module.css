@@ -1,0 +1,6 @@
+.button {
+  background: var(--color-primary);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  transition: background var(--duration-fast) ease;
+}

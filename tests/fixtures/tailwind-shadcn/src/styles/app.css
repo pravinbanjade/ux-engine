@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: oklch(0.55 0.15 150);
+  --color-surface: oklch(0.98 0.005 150);
+  --color-danger: oklch(0.58 0.20 25);
+  --spacing-2: 0.5rem;
+  --spacing-4: 1rem;
+  --spacing-6: 1.5rem;
+  --radius-md: 0.5rem;
+  --text-base: 1rem;
+  --duration-fast: 150ms;
+}

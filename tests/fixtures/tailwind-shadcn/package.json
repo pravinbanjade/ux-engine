@@ -1,0 +1,12 @@
+{
+  "name": "fixture-tailwind-shadcn",
+  "private": true,
+  "dependencies": {
+    "react": "^19.2.4",
+    "@tanstack/react-router": "^1.167.4",
+    "class-variance-authority": "^0.7.1",
+    "lucide-react": "^0.577.0",
+    "radix-ui": "^1.4.3"
+  },
+  "devDependencies": { "tailwindcss": "^4.2.2", "vitest": "^4.1.10" }
+}

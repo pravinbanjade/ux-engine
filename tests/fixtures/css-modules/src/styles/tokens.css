@@ -1,0 +1,8 @@
+:root {
+  --color-primary: #2f6f4f;
+  --color-surface: #fbfdfb;
+  --space-2: 8px;
+  --space-4: 16px;
+  --radius-md: 8px;
+  --duration-fast: 150ms;
+}
