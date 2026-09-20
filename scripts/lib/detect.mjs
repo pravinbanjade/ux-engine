@@ -1,0 +1,105 @@
+import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
+import { extractCustomProperties } from './tokens.mjs';
+
+const SKIP_DIRS = new Set(['node_modules', 'dist', 'build', '.git', '.next', 'coverage']);
+
+export function walkFiles(root, extensions) {
+  const out = [];
+  const visit = (dir) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name)) visit(join(dir, entry.name));
+      } else if (extensions.some((e) => entry.name.endsWith(e))) {
+        out.push(relative(root, join(dir, entry.name)).split(sep).join('/'));
+      }
+    }
+  };
+  visit(root);
+  return out.sort();
+}
+
+export function readManifest(root) {
+  const path = join(root, 'package.json');
+  if (!existsSync(path)) return null;
+  const pkg = JSON.parse(readFileSync(path, 'utf8'));
+  return { pkg, deps: { ...pkg.dependencies, ...pkg.devDependencies } };
+}
+
+const majorOf = (range) => Number(String(range ?? '').replace(/^[^\d]*/, '').split('.')[0]) || null;
+
+export function detectStyling(root, deps) {
+  const stylesheets = walkFiles(root, ['.css']);
+  const withTokens = stylesheets.filter((f) => Object.keys(extractCustomProperties(readFileSync(join(root, f), 'utf8'))).length >= 3);
+  const tokenSource = withTokens.length ? [withTokens[0]] : [];
+  const tokenSyntax = tokenSource.length
+    ? (readFileSync(join(root, tokenSource[0]), 'utf8').includes('@theme') ? '@theme' : ':root')
+    : null;
+  const extraStylesheets = stylesheets.filter((f) => !tokenSource.includes(f));
+
+  let system = null;
+  let utilityFirst = false;
+  if (deps.tailwindcss) {
+    system = majorOf(deps.tailwindcss) >= 4 ? 'tailwind-v4' : 'tailwind-v3';
+    utilityFirst = true;
+  } else if (deps['styled-components']) system = 'styled-components';
+  else if (deps['@emotion/react'] || deps['@emotion/styled']) system = 'emotion';
+  else if (stylesheets.some((f) => f.includes('.module.css'))) system = 'css-modules';
+  else if (stylesheets.length) system = 'plain-css';
+
+  return { system, tokenSource, tokenSyntax, utilityFirst, extraStylesheets };
+}
+
+export function detectComponents(root, deps) {
+  const files = walkFiles(root, ['.tsx', '.jsx', '.vue', '.svelte']);
+  const counts = new Map();
+  for (const file of files) {
+    const dir = file.split('/').slice(0, -1).join('/');
+    counts.set(dir, (counts.get(dir) ?? 0) + 1);
+  }
+  // Prefer an explicit `ui` directory; otherwise the densest directory wins.
+  const ranked = [...counts.entries()].sort((a, b) => {
+    const uiA = a[0].endsWith('/ui') ? 1 : 0;
+    const uiB = b[0].endsWith('/ui') ? 1 : 0;
+    return uiB - uiA || b[1] - a[1] || a[0].localeCompare(b[0]);
+  });
+  const dir = ranked.length ? ranked[0][0] : null;
+
+  let variantMechanism = 'props';
+  if (deps['class-variance-authority']) variantMechanism = 'cva';
+  else if (deps['styled-components'] || deps['@emotion/styled']) variantMechanism = 'styled';
+  else if (deps.tv || deps['tailwind-variants']) variantMechanism = 'tailwind-variants';
+
+  const library = existsSync(join(root, 'components.json')) ? 'shadcn' : null;
+  let primitives = null;
+  if (deps['radix-ui'] || Object.keys(deps).some((d) => d.startsWith('@radix-ui/'))) primitives = 'radix';
+  else if (deps['@headlessui/react']) primitives = 'headless-ui';
+  else if (deps['react-aria-components']) primitives = 'react-aria';
+
+  return { dir, library, variantMechanism, primitives };
+}
+
+export function detectConventions(deps) {
+  let framework = null;
+  if (deps.react) framework = `react-${majorOf(deps.react) ?? 'unknown'}`;
+  else if (deps.vue) framework = `vue-${majorOf(deps.vue) ?? 'unknown'}`;
+  else if (deps.svelte) framework = `svelte-${majorOf(deps.svelte) ?? 'unknown'}`;
+
+  let router = null;
+  if (deps['@tanstack/react-router']) router = 'tanstack-router';
+  else if (deps['react-router-dom']) router = 'react-router';
+  else if (deps.next) router = 'next';
+
+  let testRunner = null;
+  if (deps.vitest) testRunner = 'vitest';
+  else if (deps.jest) testRunner = 'jest';
+
+  let iconSet = null;
+  if (deps['lucide-react']) iconSet = 'lucide';
+  else if (Object.keys(deps).some((d) => d.startsWith('@heroicons/'))) iconSet = 'heroicons';
+  else if (deps['react-icons']) iconSet = 'react-icons';
+
+  return { framework, router, testRunner, iconSet, a11yTarget: 'WCAG 2.2 AA' };
+}
