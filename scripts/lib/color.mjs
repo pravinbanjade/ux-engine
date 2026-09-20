@@ -104,8 +104,8 @@ const UNITS = { px: 'length', rem: 'length', em: 'length', ms: 'time', s: 'time'
 
 export function parseScalar(input) {
   const trimmed = String(input).trim();
-  // Allow optional leading +, digits or leading-dot decimal, and optional unit
-  const m = /^([+]?)(\d+(?:\.\d+)?|\.\d+)(px|rem|em|ms|s)?$/.exec(trimmed);
+  // Allow optional leading + or -, digits or leading-dot decimal, and optional unit
+  const m = /^([+\-]?)(\d+(?:\.\d+)?|\.\d+)(px|rem|em|ms|s)?$/.exec(trimmed);
   if (!m) return null;
   const value = Number(m[1] + m[2]);
   const unit = m[3] || null;

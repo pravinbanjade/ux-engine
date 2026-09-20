@@ -137,3 +137,37 @@ test('scalarDistance returns zero when both are zero', () => {
 test('scalarDistance refuses to compare a length with a duration', () => {
   assert.equal(scalarDistance(parseScalar('16px'), parseScalar('150ms')), null);
 });
+
+test('parseScalar accepts negative values', () => {
+  assert.deepEqual(parseScalar('-4px'), { value: -4, unit: 'px' });
+  assert.deepEqual(parseScalar('-0.5rem'), { value: -0.5, unit: 'rem' });
+  assert.deepEqual(parseScalar('-.5rem'), { value: -0.5, unit: 'rem' });
+  assert.deepEqual(parseScalar('-100ms'), { value: -100, unit: 'ms' });
+});
+
+test('parseScalar accepts unitless zero including -0', () => {
+  const result = parseScalar('-0');
+  assert.equal(result.unit, null);
+  // -0 and 0 are both acceptable; both have value 0
+  assert.equal(result.value === 0 || result.value === -0, true);
+});
+
+test('parseScalar rejects non-zero negative unitless values', () => {
+  assert.equal(parseScalar('-5'), null);
+  assert.equal(parseScalar('-0.5'), null);
+});
+
+test('parseScalar rejects malformed values', () => {
+  assert.equal(parseScalar('1.2.3px'), null);
+  assert.equal(parseScalar('-'), null);
+});
+
+test('scalarDistance handles negative candidate against positive reference', () => {
+  // -4px vs 16px: |(-4) - 16| / |16| = 20/16 = 1.25
+  // This represents a 125% difference (candidate is 20px away from reference)
+  assert.ok(Math.abs(scalarDistance(parseScalar('-4px'), parseScalar('16px')) - 1.25) < 1e-9);
+
+  // -10px vs -20px: |(-10) - (-20)| / |(-20)| = 10/20 = 0.5
+  // This represents a 50% difference
+  assert.ok(Math.abs(scalarDistance(parseScalar('-10px'), parseScalar('-20px')) - 0.5) < 1e-9);
+});
