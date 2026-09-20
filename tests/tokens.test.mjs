@@ -49,3 +49,29 @@ test('groupTokens buckets every property', () => {
   assert.deepEqual(Object.keys(grouped.spacing), ['--space-2', '--space-4']);
   assert.deepEqual(Object.keys(grouped.motion), ['--duration-fast']);
 });
+
+test('extractCustomProperties captures final declaration without trailing semicolon', () => {
+  const props = extractCustomProperties(':root{ --a: 1px; --b: 2px }');
+  assert.deepEqual(props, { '--a': '1px', '--b': '2px' });
+});
+
+test('categorizeToken handles border-* names correctly', () => {
+  assert.equal(categorizeToken('--border-radius', '0.5rem'), 'radius');
+  assert.equal(categorizeToken('--border-width', '1px'), 'spacing');
+  assert.equal(categorizeToken('--border-color', '#fff'), 'color');
+  assert.equal(categorizeToken('--color-border', '#fff'), 'color');
+});
+
+test('groupTokens includes shadow, radius, type, and other buckets', () => {
+  const props = {
+    '--shadow-sm': '0 1px 2px rgba(0,0,0,0.05)',
+    '--radius-lg': '12px',
+    '--font-size': '16px',
+    '--unknown': 'custom-value'
+  };
+  const grouped = groupTokens(props);
+  assert.deepEqual(Object.keys(grouped.shadow), ['--shadow-sm']);
+  assert.deepEqual(Object.keys(grouped.radius), ['--radius-lg']);
+  assert.deepEqual(Object.keys(grouped.type), ['--font-size']);
+  assert.deepEqual(Object.keys(grouped.other), ['--unknown']);
+});

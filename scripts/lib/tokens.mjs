@@ -23,7 +23,7 @@ export function extractBlocks(css) {
 export function extractCustomProperties(css) {
   const props = {};
   for (const block of extractBlocks(css)) {
-    const re = /(--[A-Za-z0-9_-]+)\s*:\s*([^;]+);/g;
+    const re = /(--[A-Za-z0-9_-]+)\s*:\s*([^;}]+)(?:[;}]|$)/g;
     let m;
     while ((m = re.exec(block))) props[m[1]] = m[2].trim();
   }
@@ -31,7 +31,7 @@ export function extractCustomProperties(css) {
 }
 
 const NAME_RULES = [
-  [/color|colour|bg|background|fg|foreground|border|accent|brand/, 'color'],
+  [/color|colour|bg|background|fg|foreground|border-color|accent|brand/, 'color'],
   [/radius|rounded/, 'radius'],
   [/shadow|elevation/, 'shadow'],
   [/duration|ease|transition|animate|motion/, 'motion'],
