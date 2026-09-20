@@ -1,0 +1,11 @@
+{
+  "name": "ux-engine",
+  "owner": { "name": "Pravin Banjade" },
+  "plugins": [
+    {
+      "name": "ux-engine",
+      "source": "./",
+      "description": "Design-system detection, UX auditing, and intent-driven UI generation."
+    }
+  ]
+}
