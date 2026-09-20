@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "generatedAt": "2026-01-01T00:00:00.000Z",
+  "derivedFrom": [
+    {
+      "path": "package.json",
+      "sha256": "b862db11f7c978c79a838dd35c1ba769f13f952947b2056919e8cca33de826ab"
+    }
+  ],
+  "styling": {
+    "system": "styled-components",
+    "tokenSource": [],
+    "tokenSyntax": null,
+    "utilityFirst": false,
+    "extraStylesheets": []
+  },
+  "components": {
+    "dir": "src/components",
+    "library": null,
+    "variantMechanism": "styled",
+    "primitives": null
+  },
+  "tokens": {
+    "color": {},
+    "spacing": {},
+    "radius": {},
+    "type": {},
+    "shadow": {},
+    "motion": {},
+    "other": {}
+  },
+  "conventions": {
+    "framework": "react-19",
+    "router": null,
+    "testRunner": "vitest",
+    "iconSet": null,
+    "a11yTarget": "WCAG 2.2 AA"
+  },
+  "confidence": {
+    "styling": "medium",
+    "components": "medium",
+    "conventions": "high"
+  }
+}

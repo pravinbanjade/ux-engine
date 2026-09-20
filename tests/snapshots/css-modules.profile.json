@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "generatedAt": "2026-01-01T00:00:00.000Z",
+  "derivedFrom": [
+    {
+      "path": "package.json",
+      "sha256": "64d226f2493c687e1d68721d1f589b09f20930d49c7249ece83e4ad59819be75"
+    },
+    {
+      "path": "src/styles/tokens.css",
+      "sha256": "e616a4abf7258ba3adbc04d7dcb4ce3471aab63d11a7093e7d1f60aa81f8a21a"
+    }
+  ],
+  "styling": {
+    "system": "css-modules",
+    "tokenSource": [
+      "src/styles/tokens.css"
+    ],
+    "tokenSyntax": ":root",
+    "utilityFirst": false,
+    "extraStylesheets": [
+      "src/components/Button.module.css"
+    ]
+  },
+  "components": {
+    "dir": "src/components",
+    "library": null,
+    "variantMechanism": "props",
+    "primitives": null
+  },
+  "tokens": {
+    "color": {
+      "--color-primary": "#2f6f4f",
+      "--color-surface": "#fbfdfb"
+    },
+    "spacing": {
+      "--space-2": "8px",
+      "--space-4": "16px"
+    },
+    "radius": {
+      "--radius-md": "8px"
+    },
+    "type": {},
+    "shadow": {},
+    "motion": {
+      "--duration-fast": "150ms"
+    },
+    "other": {}
+  },
+  "conventions": {
+    "framework": "react-19",
+    "router": "react-router",
+    "testRunner": "jest",
+    "iconSet": null,
+    "a11yTarget": "WCAG 2.2 AA"
+  },
+  "confidence": {
+    "styling": "high",
+    "components": "medium",
+    "conventions": "high"
+  }
+}

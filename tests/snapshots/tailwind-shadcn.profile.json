@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "generatedAt": "2026-01-01T00:00:00.000Z",
+  "derivedFrom": [
+    {
+      "path": "components.json",
+      "sha256": "6200aa0ff36d44017e60e99a65b18b6907c22f5c49d0560cf51c49c4362b2b40"
+    },
+    {
+      "path": "package.json",
+      "sha256": "2d185dea830c676512f41caf976767ea21b20d57cea84b6e366b144d9bde7d19"
+    },
+    {
+      "path": "src/styles/app.css",
+      "sha256": "68f1c539e9ba8ef672eadec6d47f7053d22ce75d45a98e452fc3ab9c2e5d1c14"
+    }
+  ],
+  "styling": {
+    "system": "tailwind-v4",
+    "tokenSource": [
+      "src/styles/app.css"
+    ],
+    "tokenSyntax": "@theme",
+    "utilityFirst": true,
+    "extraStylesheets": []
+  },
+  "components": {
+    "dir": "src/components/ui",
+    "library": "shadcn",
+    "variantMechanism": "cva",
+    "primitives": "radix"
+  },
+  "tokens": {
+    "color": {
+      "--color-primary": "oklch(0.55 0.15 150)",
+      "--color-surface": "oklch(0.98 0.005 150)",
+      "--color-danger": "oklch(0.58 0.20 25)"
+    },
+    "spacing": {
+      "--spacing-2": "0.5rem",
+      "--spacing-4": "1rem",
+      "--spacing-6": "1.5rem"
+    },
+    "radius": {
+      "--radius-md": "0.5rem"
+    },
+    "type": {
+      "--text-base": "1rem"
+    },
+    "shadow": {},
+    "motion": {
+      "--duration-fast": "150ms"
+    },
+    "other": {}
+  },
+  "conventions": {
+    "framework": "react-19",
+    "router": "tanstack-router",
+    "testRunner": "vitest",
+    "iconSet": "lucide",
+    "a11yTarget": "WCAG 2.2 AA"
+  },
+  "confidence": {
+    "styling": "high",
+    "components": "high",
+    "conventions": "high"
+  }
+}
