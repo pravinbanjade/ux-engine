@@ -8,10 +8,11 @@ appliesTo: [any]
 ---
 ## Signal
 A margin, padding, or gap declaration uses a numeric literal (`13px`,
-`0.85rem`, an arbitrary Tailwind bracket value like `p-[13px]`) that does not
-match any value in the project's spacing token group, rather than a spacing
-token or a utility class generated from the scale. The scanner flags values
-that fall outside the declared spacing step set with no tolerance for
+`0.85rem`) that does not match any value in the project's spacing token
+group, whether written directly in a style declaration or produced by an
+inline utility escape hatch that accepts an arbitrary value, rather than a
+spacing token or a utility class generated from the scale. The scanner flags
+values that fall outside the declared spacing step set with no tolerance for
 near-misses.
 
 ## Why it fails

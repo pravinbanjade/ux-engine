@@ -49,3 +49,22 @@ test('no counter-example section is left empty', () => {
     assert.ok(section.trim().length > 80, `${m.filename}: counter-example too thin`);
   }
 });
+
+// This plugin is stack-agnostic: entries must describe shapes and mechanisms,
+// never name the toolchain that produced them. Word-boundary, case-insensitive
+// matching on the raw line so a hyphenated product name (e.g. "styled-components")
+// can't be hidden by splitting on the hyphen.
+const BANNED_TERMS = ['tailwind', 'shadcn', 'styled-components', 'bootstrap', 'chakra', 'mui', 'vue', 'svelte'];
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+test('no mode names a specific framework or design-system product', () => {
+  for (const m of modes) {
+    const lines = m.text.split('\n');
+    for (const term of BANNED_TERMS) {
+      const re = new RegExp(`\\b${escapeRegExp(term)}\\b`, 'i');
+      for (const line of lines) {
+        assert.ok(!re.test(line), `${m.filename}: mentions "${term}" -> "${line.trim()}"`);
+      }
+    }
+  }
+});
