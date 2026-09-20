@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { extractCustomProperties } from './tokens.mjs';
 
@@ -24,8 +24,12 @@ export function walkFiles(root, extensions) {
 export function readManifest(root) {
   const path = join(root, 'package.json');
   if (!existsSync(path)) return null;
-  const pkg = JSON.parse(readFileSync(path, 'utf8'));
-  return { pkg, deps: { ...pkg.dependencies, ...pkg.devDependencies } };
+  try {
+    const pkg = JSON.parse(readFileSync(path, 'utf8'));
+    return { pkg, deps: { ...pkg.dependencies, ...pkg.devDependencies } };
+  } catch {
+    return null;
+  }
 }
 
 const majorOf = (range) => Number(String(range ?? '').replace(/^[^\d]*/, '').split('.')[0]) || null;
@@ -33,7 +37,7 @@ const majorOf = (range) => Number(String(range ?? '').replace(/^[^\d]*/, '').spl
 export function detectStyling(root, deps) {
   const stylesheets = walkFiles(root, ['.css']);
   const withTokens = stylesheets.filter((f) => Object.keys(extractCustomProperties(readFileSync(join(root, f), 'utf8'))).length >= 3);
-  const tokenSource = withTokens.length ? [withTokens[0]] : [];
+  const tokenSource = withTokens;
   const tokenSyntax = tokenSource.length
     ? (readFileSync(join(root, tokenSource[0]), 'utf8').includes('@theme') ? '@theme' : ':root')
     : null;
@@ -59,8 +63,11 @@ export function detectComponents(root, deps) {
     const dir = file.split('/').slice(0, -1).join('/');
     counts.set(dir, (counts.get(dir) ?? 0) + 1);
   }
-  // Prefer an explicit `ui` directory; otherwise the densest directory wins.
-  const ranked = [...counts.entries()].sort((a, b) => {
+  // Prefer /ui within a band of the densest directory.
+  const maxCount = counts.size ? Math.max(...counts.values()) : 0;
+  const threshold = maxCount * 0.25;
+  const inBand = [...counts.entries()].filter(([, count]) => count >= threshold);
+  const ranked = inBand.sort((a, b) => {
     const uiA = a[0].endsWith('/ui') ? 1 : 0;
     const uiB = b[0].endsWith('/ui') ? 1 : 0;
     return uiB - uiA || b[1] - a[1] || a[0].localeCompare(b[0]);

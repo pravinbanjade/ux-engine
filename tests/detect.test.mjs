@@ -67,3 +67,113 @@ test('conventions degrade to null rather than guessing', () => {
   assert.equal(c.router, null);
   assert.equal(c.testRunner, null);
 });
+
+test('readManifest returns null for a missing package.json', () => {
+  const result = readManifest('/tmp/nonexistent-dir-' + Date.now());
+  assert.equal(result, null);
+});
+
+test('readManifest returns null for malformed JSON', async () => {
+  const { mkdir, writeFile } = await import('node:fs/promises');
+  const dir = `/tmp/malformed-pkg-${Date.now()}`;
+  await mkdir(dir, { recursive: true });
+  await writeFile(`${dir}/package.json`, '{ "name": "x", }');
+  try {
+    const result = readManifest(dir);
+    assert.equal(result, null);
+  } finally {
+    await import('node:fs/promises').then(m => m.rm(dir, { recursive: true, force: true }));
+  }
+});
+
+test('detectStyling gracefully handles directories with no stylesheets', async () => {
+  const { mkdir } = await import('node:fs/promises');
+  const dir = `/tmp/no-css-${Date.now()}`;
+  await mkdir(dir, { recursive: true });
+  try {
+    const styling = detectStyling(dir, {});
+    assert.equal(styling.system, null);
+    assert.deepEqual(styling.tokenSource, []);
+    assert.equal(styling.tokenSyntax, null);
+  } finally {
+    await import('node:fs/promises').then(m => m.rm(dir, { recursive: true, force: true }));
+  }
+});
+
+test('detectComponents gracefully handles directories with no components', async () => {
+  const { mkdir } = await import('node:fs/promises');
+  const dir = `/tmp/no-components-${Date.now()}`;
+  await mkdir(dir, { recursive: true });
+  try {
+    const components = detectComponents(dir, {});
+    assert.equal(components.dir, null);
+    assert.equal(components.variantMechanism, 'props');
+  } finally {
+    await import('node:fs/promises').then(m => m.rm(dir, { recursive: true, force: true }));
+  }
+});
+
+test('prefers densest directory over small /ui directory when outside band', async () => {
+  const { mkdir, writeFile } = await import('node:fs/promises');
+  const dir = `/tmp/ui-vs-dense-${Date.now()}`;
+  await mkdir(`${dir}/src/components/ui`, { recursive: true });
+  await mkdir(`${dir}/src/components`, { recursive: true });
+  await writeFile(`${dir}/src/components/ui/small.tsx`, 'export const Small = () => null;');
+  await writeFile(`${dir}/src/components/comp1.tsx`, 'export const C1 = () => null;');
+  await writeFile(`${dir}/src/components/comp2.tsx`, 'export const C2 = () => null;');
+  await writeFile(`${dir}/src/components/comp3.tsx`, 'export const C3 = () => null;');
+  await writeFile(`${dir}/src/components/comp4.tsx`, 'export const C4 = () => null;');
+  await writeFile(`${dir}/src/components/comp5.tsx`, 'export const C5 = () => null;');
+  try {
+    const components = detectComponents(dir, {});
+    assert.equal(components.dir, 'src/components', 'dense non-ui directory should win over small ui directory outside band');
+  } finally {
+    await import('node:fs/promises').then(m => m.rm(dir, { recursive: true, force: true }));
+  }
+});
+
+test('prefers /ui directory when within band of densest', async () => {
+  const { mkdir, writeFile } = await import('node:fs/promises');
+  const dir = `/tmp/ui-in-band-${Date.now()}`;
+  await mkdir(`${dir}/src/components/ui`, { recursive: true });
+  await mkdir(`${dir}/src/components`, { recursive: true });
+  await writeFile(`${dir}/src/components/ui/button.tsx`, 'export const Button = () => null;');
+  await writeFile(`${dir}/src/components/ui/card.tsx`, 'export const Card = () => null;');
+  await writeFile(`${dir}/src/components/comp1.tsx`, 'export const C1 = () => null;');
+  await writeFile(`${dir}/src/components/comp2.tsx`, 'export const C2 = () => null;');
+  try {
+    const components = detectComponents(dir, {});
+    assert.equal(components.dir, 'src/components/ui', '/ui should win when within band');
+  } finally {
+    await import('node:fs/promises').then(m => m.rm(dir, { recursive: true, force: true }));
+  }
+});
+
+test('detectStyling includes all stylesheets with 3+ properties in tokenSource', async () => {
+  const { mkdir, writeFile } = await import('node:fs/promises');
+  const dir = `/tmp/multi-tokens-${Date.now()}`;
+  await mkdir(`${dir}/src/styles`, { recursive: true });
+  await writeFile(`${dir}/src/styles/colors.css`, `
+    :root {
+      --color-primary: #000;
+      --color-secondary: #fff;
+      --color-tertiary: #ccc;
+    }
+  `);
+  await writeFile(`${dir}/src/styles/spacing.css`, `
+    :root {
+      --spacing-sm: 4px;
+      --spacing-md: 8px;
+      --spacing-lg: 16px;
+    }
+  `);
+  try {
+    const styling = detectStyling(dir, {});
+    assert.equal(styling.tokenSource.length, 2, 'both stylesheets should be in tokenSource');
+    assert.ok(styling.tokenSource.includes('src/styles/colors.css'));
+    assert.ok(styling.tokenSource.includes('src/styles/spacing.css'));
+    assert.equal(styling.tokenSyntax, ':root', 'tokenSyntax should be derived from first entry');
+  } finally {
+    await import('node:fs/promises').then(m => m.rm(dir, { recursive: true, force: true }));
+  }
+});
