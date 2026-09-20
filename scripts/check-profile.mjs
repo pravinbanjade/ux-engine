@@ -11,7 +11,44 @@ if (!existsSync(path)) {
   process.exit(3);
 }
 
-const profile = JSON.parse(readFileSync(path, 'utf8'));
+let profile;
+try {
+  profile = JSON.parse(readFileSync(path, 'utf8'));
+} catch (e) {
+  console.error('Profile file is not valid JSON. Run /ux-design-system first.');
+  process.exit(3);
+}
+
+if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+  console.error('Profile is not a JSON object. Run /ux-design-system first.');
+  process.exit(3);
+}
+
+if (profile.version === undefined || typeof profile.version !== 'number') {
+  console.error('Profile is missing or has an invalid "version" field. Run /ux-design-system first.');
+  process.exit(3);
+}
+
+if (profile.derivedFrom === undefined || !Array.isArray(profile.derivedFrom)) {
+  console.error('Profile is missing or has an invalid "derivedFrom" field. Run /ux-design-system first.');
+  process.exit(3);
+}
+
+for (let i = 0; i < profile.derivedFrom.length; i++) {
+  const entry = profile.derivedFrom[i];
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    console.error('Profile "derivedFrom" entry is not a JSON object. Run /ux-design-system first.');
+    process.exit(3);
+  }
+  if (typeof entry.path !== 'string') {
+    console.error('Profile "derivedFrom" entry missing or has invalid "path" field. Run /ux-design-system first.');
+    process.exit(3);
+  }
+  if (typeof entry.sha256 !== 'string') {
+    console.error('Profile "derivedFrom" entry missing or has invalid "sha256" field. Run /ux-design-system first.');
+    process.exit(3);
+  }
+}
 
 if (profile.version > SCHEMA_VERSION) {
   console.error(`Profile schema v${profile.version} is newer than this plugin (v${SCHEMA_VERSION}). Update ux-engine.`);
