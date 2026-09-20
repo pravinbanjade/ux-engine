@@ -50,9 +50,42 @@ export function validateModeFile({ filename, text }) {
   if (!DETECTIONS.includes(data.detection)) errors.push(`${filename}: unknown detection "${data.detection}"`);
   if (!Array.isArray(data.appliesTo) || data.appliesTo.length === 0) errors.push(`${filename}: appliesTo must be a non-empty list`);
 
-  for (const section of REQUIRED_SECTIONS) {
-    if (!body.includes(section)) errors.push(`${filename}: missing section "${section}"`);
+  // Extract all ## headings (line-anchored)
+  const headings = [];
+  const headingRegex = /^## (.*)$/gm;
+  let match;
+  while ((match = headingRegex.exec(body)) !== null) {
+    headings.push(`## ${match[1]}`);
   }
+
+  // Check for missing, extra, or reordered sections
+  const headingSet = new Set(headings);
+  const requiredSet = new Set(REQUIRED_SECTIONS);
+
+  // Check for missing sections
+  for (const section of REQUIRED_SECTIONS) {
+    if (!headingSet.has(section)) {
+      errors.push(`${filename}: missing required section "${section}"`);
+    }
+  }
+
+  // Check for extra sections
+  for (const heading of headings) {
+    if (!requiredSet.has(heading)) {
+      errors.push(`${filename}: unexpected section "${heading}"`);
+    }
+  }
+
+  // Check order (only if we have all required sections)
+  if (headings.length === REQUIRED_SECTIONS.length) {
+    for (let i = 0; i < headings.length; i++) {
+      if (headings[i] !== REQUIRED_SECTIONS[i]) {
+        errors.push(`${filename}: sections must appear in order: ${REQUIRED_SECTIONS.map(s => s.replace(/^## /, '')).join(', ')}`);
+        break;
+      }
+    }
+  }
+
   return errors;
 }
 
