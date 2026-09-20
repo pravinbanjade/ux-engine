@@ -33,9 +33,56 @@ const NUMBER = String.raw`[+-]?(?:\d+\.\d+|\.\d+|\d+)`;
 const NOT_BEFORE = String.raw`(?<![\w.-])`;
 const NOT_AFTER = String.raw`(?!\w)`;
 
+// Hex colours: exactly 3, 4, 6 or 8 hex digits. The previous {3,8} also
+// admitted 5 and 7, which are not valid CSS hex lengths at all. The
+// alternation is ordered longest-first so an 8-digit code is read as one
+// 8-digit match rather than a 6-digit match plus two stray leftover
+// characters.
+const HEX = String.raw`#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})`;
+// Not preceded by a word character, a dot, a dollar sign, or another hash:
+// this is what keeps a private class field *access* like "this.#face" from
+// reading as a hex literal (the disqualifying character is the '.' right
+// before the '#').
+const HEX_NOT_BEFORE = String.raw`(?<![\w.$#])`;
+// Not followed by a word character or hyphen — kills a hash-route string
+// like "#deed-section", where "-section" would otherwise look like more of
+// the same token — and not followed by optional whitespace then '=', which
+// kills a private-field *declaration* like "#face = 1;": that's an
+// assignment target, not a colour value, and HEX_NOT_BEFORE alone can't
+// catch it when the field is declared at the very start of a line (there is
+// no preceding '.' to disqualify it there).
+const HEX_NOT_AFTER = String.raw`(?![\w-])(?!\s*=)`;
+
+// Lines that are pure comments never describe an actual value in the code —
+// they're prose *about* one ("Use padding of 16px", "@default 300ms", "see
+// #3b7d4f for reference"). Only the line's own leading punctuation is
+// checked here. A trailing "// ..." comment after real code on the same
+// line is NOT caught by this — doing so correctly would need a real
+// tokenizer to know where a string or regex literal ends and a comment
+// begins, and this scanner deliberately doesn't reach for one. That's a
+// known, accepted gap, not an oversight.
+const COMMENT_LINE = /^(?:\/\/|\/\*|\*\/|\*)/;
+
 const PATTERNS = [
-  { kind: 'color', re: /#[0-9a-fA-F]{3,8}\b/g },
-  { kind: 'color', re: /\b(?:rgba?|hsla?|oklch|oklab)\([^)]*\)/g },
+  { kind: 'color', re: new RegExp(`${HEX_NOT_BEFORE}${HEX}${HEX_NOT_AFTER}`, 'g') },
+  {
+    kind: 'color',
+    re: /\b(?:rgba?|hsla?|oklch|oklab)\([^)]*\)/g,
+    // Kept only if parseColor can actually resolve it — stricter than
+    // "looks like a colour function call". An interpolated template
+    // literal such as `rgba(${r}, ${g}, ${b}, ${a})`, or a nested/
+    // unbalanced call such as `hsl(scale(d.value)` (the regex above only
+    // matches up to the *first* closing paren, so it captures
+    // "hsl(scale(d.value)" — missing its outer close), both fail to parse
+    // and are correctly dropped instead of reported as a value nobody can
+    // evaluate. Trade-off accepted as part of this: oklab() literals are
+    // matched by the regex for detection purposes, but parseColor does not
+    // implement oklab, so they are now *always* filtered out here and never
+    // reported. That's a known gap, not a regression to chase — reporting
+    // an unresolvable oklab() literal as a "finding" with no way to judge
+    // its distance from anything would itself be a kind of false positive.
+    validate: (value) => parseColor(value) !== null,
+  },
   { kind: 'length', re: new RegExp(`${NOT_BEFORE}${NUMBER}(?:px|rem|em)${NOT_AFTER}`, 'g') },
   { kind: 'time', re: new RegExp(`${NOT_BEFORE}${NUMBER}m?s${NOT_AFTER}`, 'g') },
 ];
@@ -47,12 +94,16 @@ export function findLiterals(text) {
   const out = [];
   text.split('\n').forEach((raw, index) => {
     if (raw.includes('ux-engine-ignore')) return;
+    if (COMMENT_LINE.test(raw.trim())) return;
     // A line that only references tokens is on-system by construction.
     const line = raw.replace(/var\(--[A-Za-z0-9_-]+\)/g, '');
-    for (const { kind, re } of PATTERNS) {
+    for (const { kind, re, validate } of PATTERNS) {
       re.lastIndex = 0;
       let m;
-      while ((m = re.exec(line))) out.push({ line: index + 1, value: m[0], kind });
+      while ((m = re.exec(line))) {
+        if (validate && !validate(m[0])) continue;
+        out.push({ line: index + 1, value: m[0], kind });
+      }
     }
   });
   return out.sort((a, b) => a.line - b.line);
@@ -76,15 +127,24 @@ export function nearestToken(literal, tokens, thresholds) {
   return best;
 }
 
+// A plain `file.startsWith(scope)` would let "src/components" also match
+// "src/components-legacy/...". Require the match to land on a path-segment
+// boundary: either the file equals the scope exactly, or the scope is
+// followed by a '/'.
+function inScope(file, scope) {
+  if (!scope) return true;
+  const normalized = scope.replace(/\/+$/, '');
+  return file === normalized || file.startsWith(`${normalized}/`);
+}
+
 export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRESHOLDS } = {}) {
   const findings = [];
   const skipped = [];
   const excluded = new Set(profile.styling.tokenSource ?? []);
-  const scope = path ?? '';
 
   for (const file of walkFiles(root, SCAN_EXTENSIONS)) {
     if (excluded.has(file)) continue;
-    if (scope && !file.startsWith(scope)) continue;
+    if (!inScope(file, path)) continue;
 
     let text;
     try {

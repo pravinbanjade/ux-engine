@@ -9,14 +9,30 @@ const flag = (name, fallback) => {
   return i === -1 ? fallback : args[i + 1];
 };
 
+const USAGE = 'Usage: scan-off-system.mjs --profile <path> [--root <dir>] [--path <dir>] [--threshold-color N] [--threshold-scalar N]';
+
 const profilePath = flag('profile');
 if (!profilePath) {
-  console.error('Usage: scan-off-system.mjs --profile <path> [--root <dir>] [--path <dir>] [--threshold-color N] [--threshold-scalar N]');
+  console.error(USAGE);
   process.exit(1);
 }
 
 const root = resolve(flag('root', '.'));
-const profile = JSON.parse(readFileSync(resolve(profilePath), 'utf8'));
+
+let profile;
+try {
+  profile = JSON.parse(readFileSync(resolve(profilePath), 'utf8'));
+} catch {
+  // A missing or unreadable --profile path is a usage error, not a crash —
+  // give it the same clean message as the missing-flag case above instead
+  // of letting a raw ENOENT/SyntaxError stack trace hit stderr. Exiting
+  // here, before anything is written to stdout, keeps stdout empty on this
+  // path so a caller piping stdout as JSON is never handed a stack trace or
+  // a truncated document.
+  console.error(USAGE);
+  process.exit(1);
+}
+
 const thresholds = {
   color: Number(flag('threshold-color', DEFAULT_THRESHOLDS.color)),
   scalar: Number(flag('threshold-scalar', DEFAULT_THRESHOLDS.scalar)),

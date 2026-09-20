@@ -2,11 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { buildProfile } from '../scripts/lib/profile.mjs';
 import { findLiterals, nearestToken, scanRepo, DEFAULT_THRESHOLDS } from '../scripts/lib/scanner.mjs';
 
 const fixture = (n) => fileURLToPath(new URL(`../tests/fixtures/${n}/`, import.meta.url));
 const cli = fileURLToPath(new URL('../scripts/scan-off-system.mjs', import.meta.url));
+const USAGE = 'Usage: scan-off-system.mjs --profile <path> [--root <dir>] [--path <dir>] [--threshold-color N] [--threshold-scalar N]';
 
 test('findLiterals reports value, kind and 1-indexed line', () => {
   const found = findLiterals("a\nconst c = '#3b7d4f';\nconst p = '17px';\nconst d = '220ms';\n");
@@ -23,6 +27,72 @@ test('findLiterals skips a line marked ux-engine-ignore', () => {
 
 test('findLiterals does not report a token reference', () => {
   assert.deepEqual(findLiterals('background: var(--color-primary);\n'), []);
+});
+
+// Discriminator 1: comment lines. A line whose trimmed text opens with //,
+// /*, */ or * is prose about a value, not the value itself.
+test('findLiterals skips a line comment mentioning a length value', () => {
+  assert.deepEqual(findLiterals('// Use padding of 16px per design spec\n'), []);
+});
+
+test('findLiterals skips a JSDoc line mentioning a duration', () => {
+  assert.deepEqual(findLiterals(' * @default 300ms\n'), []);
+});
+
+test('findLiterals skips a line comment mentioning a hex value', () => {
+  assert.deepEqual(findLiterals('// see #3b7d4f for reference\n'), []);
+});
+
+// Discriminator 2: colour-function matches are kept only if parseColor can
+// actually resolve them.
+test('findLiterals does not report an interpolated colour function call', () => {
+  assert.deepEqual(findLiterals('const c = `rgba(${r}, ${g}, ${b}, ${a})`;\n'), []);
+});
+
+test('findLiterals does not report a malformed, nested colour function call', () => {
+  assert.deepEqual(findLiterals('const d = d3.hsl(scale(d.value));\n'), []);
+});
+
+// Discriminator 3: stricter hex boundaries.
+test('findLiterals does not mistake a private field access for a hex colour', () => {
+  assert.deepEqual(findLiterals('this.#face = 1;\n'), []);
+});
+
+test('findLiterals does not mistake a private field declaration for a hex colour', () => {
+  assert.deepEqual(findLiterals('#face = 1;\n'), []);
+});
+
+test('findLiterals does not mistake a hash route for a hex colour', () => {
+  assert.deepEqual(findLiterals('const link = "#deed-section";\n'), []);
+});
+
+// Positive controls: none of the discriminators above should cost real
+// literals their findings.
+test('findLiterals still reports a real hex colour declaration', () => {
+  assert.deepEqual(findLiterals('color: #3b7d4f;\n'), [{ line: 1, value: '#3b7d4f', kind: 'color' }]);
+});
+
+test('findLiterals still reports a short hex colour alongside a length literal', () => {
+  const found = findLiterals('1px solid #ccc;\n');
+  assert.equal(found.length, 2);
+  assert.ok(found.some((f) => f.value === '1px' && f.kind === 'length'));
+  assert.ok(found.some((f) => f.value === '#ccc' && f.kind === 'color'));
+});
+
+test('findLiterals still reports an 8-digit hex colour', () => {
+  assert.deepEqual(findLiterals('#2f6f4fcc\n'), [{ line: 1, value: '#2f6f4fcc', kind: 'color' }]);
+});
+
+test('findLiterals still reports a resolvable rgba() colour function call', () => {
+  assert.deepEqual(findLiterals('const c = rgba(0,0,0,0.5);\n'), [{ line: 1, value: 'rgba(0,0,0,0.5)', kind: 'color' }]);
+});
+
+test('findLiterals still reports a plain length literal', () => {
+  assert.deepEqual(findLiterals('padding: 17px;\n'), [{ line: 1, value: '17px', kind: 'length' }]);
+});
+
+test('findLiterals still reports a plain duration literal', () => {
+  assert.deepEqual(findLiterals('transition: 220ms;\n'), [{ line: 1, value: '220ms', kind: 'time' }]);
 });
 
 test('nearestToken finds a perceptually close colour', () => {
@@ -101,4 +171,37 @@ test('the CLI emits JSON with findings and skipped', () => {
   assert.ok(Array.isArray(out.findings));
   assert.ok(Array.isArray(out.skipped));
   assert.ok(out.findings.length >= 3);
+});
+
+test('scanRepo --path requires a path-segment boundary, not just a string prefix', () => {
+  // A scratch directory under the OS temp dir, not tests/fixtures — this is
+  // set up and torn down entirely within the test, never committed.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-scan-path-'));
+  try {
+    mkdirSync(join(root, 'src/components'), { recursive: true });
+    mkdirSync(join(root, 'src/components-legacy'), { recursive: true });
+    writeFileSync(join(root, 'src/components/Foo.tsx'), "const p = '17px';\n");
+    writeFileSync(join(root, 'src/components-legacy/Bar.tsx'), "const p = '19px';\n");
+
+    const profile = { styling: { tokenSource: [] }, tokens: {} };
+    const { findings } = scanRepo(root, profile, { path: 'src/components' });
+
+    assert.ok(findings.some((f) => f.file === 'src/components/Foo.tsx'));
+    assert.deepEqual(findings.filter((f) => f.file.startsWith('src/components-legacy')), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the CLI exits cleanly with an empty stdout when --profile does not exist', () => {
+  const root = fixture('tailwind-shadcn');
+  assert.throws(
+    () => execFileSync(process.execPath, [cli, '--profile', '/nonexistent/profile.json', '--root', root], { encoding: 'utf8' }),
+    (error) => {
+      assert.equal(error.status, 1);
+      assert.equal(error.stdout, '');
+      assert.equal(error.stderr, `${USAGE}\n`);
+      return true;
+    },
+  );
 });
