@@ -24,5 +24,5 @@ test('package is zero-dependency ESM', () => {
   assert.equal(p.type, 'module');
   assert.equal(p.dependencies, undefined);
   assert.equal(p.devDependencies, undefined);
-  assert.equal(p.scripts.test, 'node --test tests/');
+  assert.equal(p.scripts.test, 'node --test "tests/**/*.test.mjs"');
 });
