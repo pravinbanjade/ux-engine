@@ -49,8 +49,8 @@ common patterns fit.
 
 ## `confidence.conventions` is low
 
-Neither a UI framework nor a test runner turned up in the manifest
-dependencies.
+No UI framework turned up in the manifest dependencies (this is what drives
+the score — a missing test runner alone only drops it to medium, never low).
 
 > What UI framework does this project use (or none, if it's framework-free),
 > and what command actually runs the tests?

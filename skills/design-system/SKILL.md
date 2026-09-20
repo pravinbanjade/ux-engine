@@ -45,9 +45,14 @@ the right order, resolve what they could not, and explain the result.
 
 4. **Sanity-check what was detected.**
    Read the profile. If `tokens` is empty but the repo plainly has colours and
-   spacing in its components, the token source was misidentified — find the
-   real stylesheet(s), correct `styling.tokenSource` (an array — a project can
-   split its tokens across more than one file), and re-run step 2.
+   spacing in its components, the automatic extraction missed the real
+   stylesheet(s) — find them, set `styling.tokenSource` to the correct array
+   of paths (a project can split its tokens across more than one file), and
+   transcribe the token values into `tokens` by hand. Do not re-run
+   `detect-profile.mjs` to pick this up: it recomputes the whole profile from
+   a fresh filesystem scan every time and does not read the existing file, so
+   it would silently discard this correction and everything you wrote in
+   step 3.
 
 5. **Write DESIGN.md.**
    Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/write-design-doc.mjs <repo-root>`.
