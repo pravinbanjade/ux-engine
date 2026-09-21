@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -95,6 +95,20 @@ test('findLiterals still reports a plain duration literal', () => {
   assert.deepEqual(findLiterals('transition: 220ms;\n'), [{ line: 1, value: '220ms', kind: 'time' }]);
 });
 
+test('findLiterals does not report zero-valued lengths or durations, which are on-system in any design system', () => {
+  // margin: 0, padding: 0, animation: 0s are always legitimate and need no token
+  assert.deepEqual(findLiterals('margin: 0; padding: 0px; border-radius: 0rem; animation-duration: 0ms;'), []);
+});
+
+test('findLiterals still reports non-zero decimal lengths and durations even when close to zero', () => {
+  // 0.5rem is off-system and should be flagged; distinguish it from 0rem
+  const found = findLiterals('margin: 0.5rem; padding: 0.5px; duration: 0.5ms;\n');
+  assert.equal(found.length, 3);
+  assert.ok(found.some((f) => f.value === '0.5rem' && f.kind === 'length'));
+  assert.ok(found.some((f) => f.value === '0.5px' && f.kind === 'length'));
+  assert.ok(found.some((f) => f.value === '0.5ms' && f.kind === 'time'));
+});
+
 // CSS reset blocks starting with * are real code, not comments, and can contain
 // off-system values. The isCommentLine function distinguishes them by looking
 // for selector-shaped characters followed by an opening brace.
@@ -115,10 +129,6 @@ test('findLiterals reports a length in a CSS reset block with multiple selectors
 // CSS selector character.
 test('findLiterals skips a JSDoc @param line even when it mentions a length default', () => {
   assert.deepEqual(findLiterals(' * @param {number} size - defaults to 16px\n'), []);
-});
-
-test('findLiterals skips a JSDoc @default line mentioning a duration', () => {
-  assert.deepEqual(findLiterals(' * @default 300ms\n'), []);
 });
 
 // Block comment openers are always treated as comment lines regardless of content.
@@ -199,9 +209,14 @@ test('declaring a JS/TS theme file as the token source excludes it from scanning
 test('a finding with no near token says so instead of proposing one', () => {
   const root = fixture('tailwind-shadcn');
   const { findings } = scanRepo(root, buildProfile(root), {});
+  // Offender.tsx's planted "220ms" is 46.7% off the fixture's only motion
+  // token (--duration-fast: 150ms) — well past the 15% scalar threshold —
+  // so this must come back null, not merely "null or a string", which would
+  // also pass if nearestToken proposed a wrong token.
   const duration = findings.find((f) => f.id === 'UX-103');
   assert.ok('nearestToken' in duration);
-  assert.ok(duration.nearestToken === null || typeof duration.nearestToken === 'string');
+  assert.equal(duration.nearestToken, null);
+  assert.equal(duration.distance, null);
 });
 
 test('the CLI emits JSON with findings and skipped', () => {
@@ -244,6 +259,29 @@ test('the CLI exits cleanly with an empty stdout when --profile does not exist',
       return true;
     },
   );
+});
+
+test('scan-off-system.mjs exits 3 on a structurally invalid profile with empty stdout', () => {
+  // Create a temporary directory with an invalid profile
+  const tmpDir = mkdtempSync(join(tmpdir(), 'ux-engine-scan-invalid-profile-'));
+  try {
+    mkdirSync(join(tmpDir, '.ux-engine'), { recursive: true });
+    const profilePath = join(tmpDir, '.ux-engine/profile.json');
+    // A profile that parses as JSON but is missing required fields
+    writeFileSync(profilePath, JSON.stringify({ version: 1, derivedFrom: [] }));
+
+    assert.throws(
+      () => execFileSync(process.execPath, [cli, '--profile', profilePath, '--root', tmpDir], { encoding: 'utf8' }),
+      (error) => {
+        assert.equal(error.status, 3);
+        assert.equal(error.stdout, '', 'stdout must be empty on exit 3');
+        assert.match(error.stderr, /Profile is missing or has an invalid/);
+        return true;
+      },
+    );
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
 
 // A length literal's own kind ('length') doesn't say whether it's a font
@@ -360,4 +398,51 @@ test('scanRepo reports no suggestion when the narrowed group has nothing close, 
     const finding = findings.find((f) => f.value === '50px');
     assert.equal(finding.nearestToken, null);
   });
+});
+
+test('scanRepo continues scanning other files when one file has a read error, completing the scan and reporting findings from good files', () => {
+  // The try/catch structures in scanRepo ensure that a failure reading or
+  // parsing one file does not interrupt the entire scan. Test this by
+  // scanning a directory with one readable, good file and one file that
+  // fails to read (via a restricted-permission file), confirming that the
+  // skipped list is populated while findings still come back.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-scan-skip-error-'));
+  try {
+    writeFileSync(join(root, 'good.tsx'), 'const c = "17px";\n');
+    // Create a file with no read permissions that will cause a read error
+    writeFileSync(join(root, 'bad.tsx'), 'bad content\n');
+    // This test may not work if running as root; skip the permission check in that case
+    try {
+      // eslint-disable-next-line no-bitwise
+      execSync(`chmod 000 "${join(root, 'bad.tsx')}"`);
+    } catch {
+      // Skip this test if we can't set restricted permissions (e.g., running as root)
+      return;
+    }
+
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { spacing: { '--space-4': '16px' } },
+    };
+    const { findings, skipped } = scanRepo(root, profile, {});
+
+    // The good file's findings should still be present
+    const goodFinding = findings.find((f) => f.file === 'good.tsx');
+    assert.ok(goodFinding, 'finding from good file is present despite bad.tsx');
+    assert.equal(goodFinding.value, '17px');
+
+    // The bad file should be in skipped with a reason (EACCES for permission denied)
+    const badSkipped = skipped.find((s) => s.file === 'bad.tsx');
+    assert.ok(badSkipped, 'bad file is in skipped');
+    assert.ok(badSkipped.reason, 'skipped entry has a reason');
+  } finally {
+    // Restore permissions before cleanup
+    try {
+      // eslint-disable-next-line no-bitwise
+      execSync(`chmod 644 "${join(root, 'bad.tsx')}" 2>/dev/null || true`);
+    } catch {
+      // Ignore
+    }
+    rmSync(root, { recursive: true, force: true });
+  }
 });

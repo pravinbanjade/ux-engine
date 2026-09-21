@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildProfile } from '../scripts/lib/profile.mjs';
@@ -156,6 +156,29 @@ test('token values with newlines are collapsed to single spaces', () => {
   assert.match(doc, /linear-gradient\( 45deg, red, blue \)/);
 });
 
+test('renderDesignDoc handles a numeric token value without throwing', () => {
+  // A hand-transcribed CSS-in-JS theme object (e.g. from a JS/TS file) may
+  // have numeric values like {"--spacing": 4}. String() coerces them before
+  // .replace() is called, so renderDesignDoc does not crash.
+  const testTokens = {
+    '--z-index-modal': 1000,
+    '--opacity-full': 1,
+    '--scale-max': 1.5,
+  };
+  const doc = renderDesignDoc({
+    generatedAt: '2026-01-01',
+    styling: { tokenSource: [], tokenSyntax: 'js-object' },
+    components: { dir: null, variantMechanism: 'cva' },
+    conventions: { a11yTarget: 'WCAG 2.1 AA' },
+    tokens: { other: testTokens },
+  });
+
+  // All numeric values should be rendered as strings in the table
+  assert.match(doc, /--z-index-modal.*1000/);
+  assert.match(doc, /--opacity-full.*1(?!\d)/);
+  assert.match(doc, /--scale-max.*1\.5/);
+});
+
 test('write-design-doc.mjs CLI exits 3 when no profile exists', () => {
   const tmpDir = mkdtempSync(join(tmpdir(), 'ux-engine-'));
   try {
@@ -165,6 +188,26 @@ test('write-design-doc.mjs CLI exits 3 when no profile exists', () => {
     });
     assert.equal(result.status, 3);
     assert.match(result.stderr, /No \.ux-engine\/profile\.json/);
+  } finally {
+    rmSync(tmpDir, { recursive: true });
+  }
+});
+
+test('write-design-doc.mjs CLI exits 3 on a structurally invalid profile with a descriptive message', () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'ux-engine-'));
+  try {
+    mkdirSync(join(tmpDir, '.ux-engine'), { recursive: true });
+    // A profile that parses as JSON but is missing required fields
+    writeFileSync(join(tmpDir, '.ux-engine/profile.json'), JSON.stringify({ version: 1, derivedFrom: [] }));
+
+    const result = spawnSync('node', ['scripts/write-design-doc.mjs', tmpDir], {
+      cwd: fileURLToPath(new URL('..', import.meta.url)),
+      encoding: 'utf8',
+    });
+
+    assert.equal(result.status, 3);
+    assert.match(result.stderr, /Profile is missing or has an invalid/);
+    assert.equal(result.stdout, '', 'stdout must be empty on exit 3');
   } finally {
     rmSync(tmpDir, { recursive: true });
   }

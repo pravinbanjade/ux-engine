@@ -201,3 +201,74 @@ test('an override for styling.tokenSource that is not an array of strings is ign
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a styling.tokenSource entry that escapes the repository root is dropped: contributes no tokens and no derivedFrom entry', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-'));
+  const outside = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-outside-'));
+  try {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'scratch', private: true }));
+    mkdirSync(join(root, 'src/styles'), { recursive: true });
+    // A legitimate in-repo stylesheet
+    writeFileSync(
+      join(root, 'src/styles/app.css'),
+      ':root {\n  --color-primary: #111111;\n  --color-secondary: #222222;\n}\n',
+    );
+    // A hostile out-of-repo stylesheet
+    writeFileSync(
+      join(outside, 'secret.css'),
+      ':root {\n  --color-secret: #333333;\n}\n',
+    );
+
+    // Override with both an in-repo and an out-of-repo stylesheet
+    const p = buildProfile(root, {
+      now: NOW,
+      overrides: {
+        'styling.tokenSource': ['src/styles/app.css', `${outside}/secret.css`],
+      },
+    });
+
+    // Only the legitimate in-repo entry is recorded
+    assert.deepEqual(p.styling.tokenSource, ['src/styles/app.css']);
+    // Only the legitimate token is extracted
+    assert.equal(p.tokens.color['--color-primary'], '#111111');
+    assert.equal(p.tokens.color['--color-secondary'], '#222222');
+    assert.equal(p.tokens.color['--color-secret'], undefined);
+    // Only the legitimate file is in derivedFrom
+    assert.ok(p.derivedFrom.some((e) => e.path === 'src/styles/app.css'));
+    assert.ok(!p.derivedFrom.some((e) => e.path.includes('secret.css')));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('a styling.tokenSource entry naming a file that does not exist is skipped rather than throwing', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-'));
+  try {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'scratch', private: true }));
+    mkdirSync(join(root, 'src/styles'), { recursive: true });
+    // A real stylesheet
+    writeFileSync(
+      join(root, 'src/styles/app.css'),
+      ':root {\n  --color-primary: #111111;\n}\n',
+    );
+
+    // Override with both an existing and a non-existent stylesheet
+    const p = buildProfile(root, {
+      now: NOW,
+      overrides: {
+        'styling.tokenSource': ['src/styles/app.css', 'src/styles/nonexistent.css'],
+      },
+    });
+
+    // Only the existing entry is recorded
+    assert.deepEqual(p.styling.tokenSource, ['src/styles/app.css']);
+    // The existing token is extracted
+    assert.equal(p.tokens.color['--color-primary'], '#111111');
+    // Only the existing file is in derivedFrom
+    assert.ok(p.derivedFrom.some((e) => e.path === 'src/styles/app.css'));
+    assert.ok(!p.derivedFrom.some((e) => e.path === 'src/styles/nonexistent.css'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

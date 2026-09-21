@@ -68,6 +68,10 @@ test('parseColor returns null for a non-colour', () => {
   assert.equal(parseColor('inherit'), null);
 });
 
+test('parseColor returns null for oklch() with too few arguments (arity guard)', () => {
+  assert.equal(parseColor('oklch(0.5)'), null);
+});
+
 test('deltaE is zero for identical colours', () => {
   assert.equal(deltaE(parseColor('#2f6f4f'), parseColor('#2f6f4f')), 0);
 });
