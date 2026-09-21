@@ -75,3 +75,19 @@ test('groupTokens includes shadow, radius, type, and other buckets', () => {
   assert.deepEqual(Object.keys(grouped.type), ['--font-size']);
   assert.deepEqual(Object.keys(grouped.other), ['--unknown']);
 });
+
+// A colour-shaped value wins over a name rule: '--text-dark' and '--y-text'
+// both match the `text|font|leading|tracking|type` name rule, but their
+// values are real colours, so they must be classified as 'color', not
+// 'type' — otherwise they're invisible to colour matching in the scanner.
+// '--text-base' and '--font-sans' keep the old, correct behaviour: neither
+// value parses as a colour, so the name rule still decides.
+test('categorizeToken classifies a colour-valued "text" token as color, not type', () => {
+  assert.equal(categorizeToken('--text-dark', '#314158'), 'color');
+  assert.equal(categorizeToken('--y-text', '#3a4564'), 'color');
+});
+
+test('categorizeToken still uses the name rule when the value is not a colour', () => {
+  assert.equal(categorizeToken('--text-base', '1rem'), 'type');
+  assert.equal(categorizeToken('--font-sans', "'Poppins', sans-serif"), 'type');
+});

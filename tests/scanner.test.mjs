@@ -245,3 +245,92 @@ test('the CLI exits cleanly with an empty stdout when --profile does not exist',
     },
   );
 });
+
+// A length literal's own kind ('length') doesn't say whether it's a font
+// size, a border radius, or a spacing/sizing value — nearestToken narrows
+// its candidate token group using a bounded look-back at the text
+// immediately before the literal (see contextHint in scanner.mjs). Each of
+// the following plants an exact numeric match in the WRONG group and a
+// close-but-not-exact match in the RIGHT group, so a passing test proves
+// the hint actually steers the search rather than numeric distance alone
+// happening to pick the right answer regardless.
+function withTempRoot(fn) {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-scan-hint-'));
+  try {
+    return fn(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test('scanRepo narrows a font-size literal to the type token group', () => {
+  withTempRoot((root) => {
+    writeFileSync(join(root, 'Foo.tsx'), 'const c = "text-[10px]";\n');
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { radius: { '--radius': '10px' }, type: { '--text-sm': '9px' } },
+    };
+    const { findings } = scanRepo(root, profile, {});
+    const finding = findings.find((f) => f.value === '10px');
+    assert.equal(finding.nearestToken, '--text-sm');
+  });
+});
+
+test('scanRepo narrows a border-radius literal to the radius token group', () => {
+  withTempRoot((root) => {
+    writeFileSync(join(root, 'Foo.tsx'), 'const c = "rounded-[10px]";\n');
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { type: { '--text-sm': '10px' }, radius: { '--radius-lg': '9px' } },
+    };
+    const { findings } = scanRepo(root, profile, {});
+    const finding = findings.find((f) => f.value === '10px');
+    assert.equal(finding.nearestToken, '--radius-lg');
+  });
+});
+
+test('scanRepo narrows a padding/sizing literal to the spacing token group', () => {
+  withTempRoot((root) => {
+    writeFileSync(join(root, 'Foo.tsx'), 'const c = "p-[10px]";\n');
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { radius: { '--radius': '10px' }, spacing: { '--space-3': '9px' } },
+    };
+    const { findings } = scanRepo(root, profile, {});
+    const finding = findings.find((f) => f.value === '10px');
+    assert.equal(finding.nearestToken, '--space-3');
+  });
+});
+
+test('scanRepo keeps searching all three length groups when the context has no recognisable hint', () => {
+  withTempRoot((root) => {
+    // "value:" is not a font-size, radius, or spacing prefix/property, so no
+    // hint should fire and today's behaviour — search spacing, radius and
+    // type together — applies: the exact match anywhere among them wins.
+    writeFileSync(join(root, 'Foo.tsx'), 'const raw = "value:10px";\n');
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { spacing: { '--space-3': '10px' }, type: { '--text-sm': '11px' } },
+    };
+    const { findings } = scanRepo(root, profile, {});
+    const finding = findings.find((f) => f.value === '10px');
+    assert.equal(finding.nearestToken, '--space-3');
+  });
+});
+
+test('scanRepo reports no suggestion when the narrowed group has nothing close, even if another group would have matched', () => {
+  withTempRoot((root) => {
+    // Hinted to `type` only. The type token is far too distant (400%+ off)
+    // to pass the scalar threshold, and the exact match sitting in `radius`
+    // must NOT be offered as a fallback once the group has been narrowed —
+    // a confident wrong suggestion is worse than none.
+    writeFileSync(join(root, 'Foo.tsx'), 'const c = "text-[50px]";\n');
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { type: { '--text-sm': '10px' }, radius: { '--radius': '50px' } },
+    };
+    const { findings } = scanRepo(root, profile, {});
+    const finding = findings.find((f) => f.value === '50px');
+    assert.equal(finding.nearestToken, null);
+  });
+});

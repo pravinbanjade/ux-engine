@@ -142,7 +142,82 @@ const PATTERNS = [
 const KIND_TO_ID = { color: 'UX-101', length: 'UX-102', time: 'UX-103' };
 const KIND_TO_GROUPS = { color: ['color'], length: ['spacing', 'radius', 'type'], time: ['motion'] };
 
-export function findLiterals(text) {
+// A 'length' literal's own kind never says whether it's meant to be a font
+// size, a border radius, or a spacing/sizing value — those are three
+// distinct token groups, and picking whichever token is merely closest in
+// number (the old behaviour) lets a border-radius token "win" a match
+// against a font-size literal just because the numbers happen to coincide.
+// contextHint looks at a short, bounded window of text immediately before
+// the literal on its line — a Tailwind arbitrary-value class prefix
+// ("text-[", "rounded-[", "p-[", ...) or a CSS/JS property name
+// ("font-size:", "border-radius:", "padding:", ...) — and, when it
+// recognises one, names the single token group that literal actually
+// belongs to. No recognisable context (the common case for a second value
+// on the same line, e.g. the "16px" in "padding: 12px 16px") means no
+// narrowing: nearestToken falls back to considering spacing, radius and
+// type together, exactly as before.
+const CONTEXT_WINDOW = 30;
+const HINT_GROUPS = { type: ['type'], radius: ['radius'], spacing: ['spacing'] };
+
+// A prefix/property name must sit at a real word boundary — preceded by the
+// start of the window or a non-identifier character — so a coincidental
+// substring buried inside an unrelated longer word (e.g. "-map-" containing
+// "p-") can't masquerade as a Tailwind prefix.
+const HINT_BOUNDARY = String.raw`(?:^|[^A-Za-z0-9_-])`;
+
+const escapeForRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Tailwind arbitrary-value classes always take the shape
+// "<prefix>-[<value>]", immediately: the value starts right after the "[".
+// An optional single extra hyphen-segment covers compound variants such as
+// "rounded-tl-[10px]" or "translate-x-[10px]" without needing a separate
+// entry for every corner/axis.
+function bracketHintRe(prefixes) {
+  const alt = prefixes.map(escapeForRegex).join('|');
+  return new RegExp(`${HINT_BOUNDARY}(?:${alt})(?:-[a-z]+)?-\\[$`, 'i');
+}
+
+// CSS/JS property names precede a value with a colon, in kebab or camel
+// case ("font-size: 16px", "fontSize: 12", "padding: '17px'"), optionally
+// followed by an opening quote before the value.
+function propertyHintRe(properties) {
+  const alt = properties.map(escapeForRegex).join('|');
+  return new RegExp(`${HINT_BOUNDARY}(?:${alt})\\s*:\\s*['"\`]?$`, 'i');
+}
+
+const HINT_MATCHERS = [
+  ['type', [
+    bracketHintRe(['text', 'leading', 'tracking']),
+    propertyHintRe(['font-size', 'fontsize', 'lineheight', 'letterspacing']),
+  ]],
+  ['radius', [
+    bracketHintRe(['rounded']),
+    propertyHintRe(['border-radius', 'borderradius']),
+  ]],
+  ['spacing', [
+    bracketHintRe([
+      'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl',
+      'm', 'mx', 'my', 'mt', 'mr', 'mb', 'ml',
+      'gap', 'space', 'w', 'h', 'min-w', 'max-w', 'min-h', 'max-h',
+      'top', 'left', 'right', 'bottom', 'inset', 'translate',
+    ]),
+    propertyHintRe(['padding', 'margin', 'width', 'height', 'gap']),
+  ]],
+];
+
+function contextHint(line, matchIndex) {
+  const window = line.slice(Math.max(0, matchIndex - CONTEXT_WINDOW), matchIndex);
+  for (const [hint, patterns] of HINT_MATCHERS) {
+    if (patterns.some((re) => re.test(window))) return hint;
+  }
+  return null;
+}
+
+// Shared by findLiterals (the public API, whose returned shape stays
+// exactly {line, value, kind} — unchanged, so every existing caller and
+// test keeps working) and scanRepo (which additionally needs each length
+// literal's context hint to narrow which token group it's matched against).
+function scanLiterals(text) {
   const out = [];
   text.split('\n').forEach((raw, index) => {
     if (raw.includes('ux-engine-ignore')) return;
@@ -154,11 +229,16 @@ export function findLiterals(text) {
       let m;
       while ((m = re.exec(line))) {
         if (validate && !validate(m[0])) continue;
-        out.push({ line: index + 1, value: m[0], kind });
+        const hint = kind === 'length' ? contextHint(line, m.index) : null;
+        out.push({ line: index + 1, value: m[0], kind, hint });
       }
     }
   });
   return out.sort((a, b) => a.line - b.line);
+}
+
+export function findLiterals(text) {
+  return scanLiterals(text).map(({ hint, ...rest }) => rest);
 }
 
 export function nearestToken(literal, tokens, thresholds) {
@@ -206,9 +286,11 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
       continue;
     }
 
-    for (const literal of findLiterals(text)) {
+    for (const literal of scanLiterals(text)) {
+      const groups = (literal.kind === 'length' && literal.hint && HINT_GROUPS[literal.hint])
+        || KIND_TO_GROUPS[literal.kind];
       const candidates = {};
-      for (const group of KIND_TO_GROUPS[literal.kind]) Object.assign(candidates, profile.tokens[group] ?? {});
+      for (const group of groups) Object.assign(candidates, profile.tokens[group] ?? {});
       const hit = nearestToken(literal, candidates, thresholds);
       findings.push({
         id: KIND_TO_ID[literal.kind],

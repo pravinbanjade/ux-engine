@@ -1,3 +1,5 @@
+import { parseColor } from './color.mjs';
+
 export const TOKEN_KINDS = ['color', 'spacing', 'radius', 'type', 'shadow', 'motion', 'other'];
 
 const BLOCK_START = /(?:@theme[^{]*|:root[^{]*)\{/g;
@@ -44,6 +46,17 @@ const TIME_VALUE = /^\d+(\.\d+)?m?s$/;
 const LENGTH_VALUE = /^-?\d+(\.\d+)?(px|rem|em)$/;
 
 export function categorizeToken(name, value) {
+  // An unambiguous colour value wins over a name rule: a token named
+  // `--text` or `--y-text` whose value is a real colour (hex, rgb/rgba,
+  // hsl/hsla, oklch) is a colour, not typography, even though its name
+  // matches the `text|font|leading|tracking|type` rule below. Checking the
+  // name first — the previous order — made every such token invisible to
+  // colour matching, for no benefit: a name rule only exists to classify
+  // values parseColor can't itself resolve (e.g. bare lengths, keywords),
+  // so letting a real colour value settle the question first never takes a
+  // correct classification away from the name rules, it only fixes the
+  // cases they got wrong.
+  if (parseColor(value) !== null) return 'color';
   for (const [pattern, kind] of NAME_RULES) {
     if (pattern.test(name)) return kind;
   }
