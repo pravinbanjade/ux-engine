@@ -302,6 +302,33 @@ test('scanRepo narrows a padding/sizing literal to the spacing token group', () 
   });
 });
 
+test('scanRepo narrows a Tailwind v4 "size-" literal to the spacing token group', () => {
+  withTempRoot((root) => {
+    // Tailwind v4's `size-*` sets width and height together from one class.
+    writeFileSync(join(root, 'Foo.tsx'), 'const c = "size-[10px]";\n');
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { radius: { '--radius': '10px' }, spacing: { '--space-3': '9px' } },
+    };
+    const { findings } = scanRepo(root, profile, {});
+    const finding = findings.find((f) => f.value === '10px');
+    assert.equal(finding.nearestToken, '--space-3');
+  });
+});
+
+test('scanRepo narrows a "min-width" property literal to the spacing token group', () => {
+  withTempRoot((root) => {
+    writeFileSync(join(root, 'Foo.css'), '.foo { min-width: 10px; }\n');
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { radius: { '--radius': '10px' }, spacing: { '--space-3': '9px' } },
+    };
+    const { findings } = scanRepo(root, profile, {});
+    const finding = findings.find((f) => f.value === '10px');
+    assert.equal(finding.nearestToken, '--space-3');
+  });
+});
+
 test('scanRepo keeps searching all three length groups when the context has no recognisable hint', () => {
   withTempRoot((root) => {
     // "value:" is not a font-size, radius, or spacing prefix/property, so no

@@ -198,10 +198,13 @@ const HINT_MATCHERS = [
     bracketHintRe([
       'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl',
       'm', 'mx', 'my', 'mt', 'mr', 'mb', 'ml',
-      'gap', 'space', 'w', 'h', 'min-w', 'max-w', 'min-h', 'max-h',
+      'gap', 'space', 'w', 'h', 'size', 'min-w', 'max-w', 'min-h', 'max-h',
       'top', 'left', 'right', 'bottom', 'inset', 'translate',
     ]),
-    propertyHintRe(['padding', 'margin', 'width', 'height', 'gap']),
+    propertyHintRe([
+      'padding', 'margin', 'width', 'height', 'gap',
+      'min-width', 'max-width', 'min-height', 'max-height',
+    ]),
   ]],
 ];
 
