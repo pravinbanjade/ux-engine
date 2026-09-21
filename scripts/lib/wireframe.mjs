@@ -198,3 +198,60 @@ export function validateWireframe(wf, profile, { root } = {}) {
   revisionErrors(wf.revisions, errors);
   return errors;
 }
+
+const INTENT_LABELS = {
+  who: 'Who uses this',
+  cadence: 'How often',
+  primaryAction: 'Primary action',
+  failure: 'When it fails',
+  scale: 'At realistic scale',
+};
+
+const STATE_LABELS = {
+  empty: 'Empty',
+  loading: 'Loading',
+  error: 'Error',
+  populated: 'Populated at scale',
+};
+
+const renderLayout = (nodes, depth, out) => {
+  for (const node of nodes ?? []) {
+    out.push(`${'  '.repeat(depth)}- ${node.region}`);
+    if (node.children) renderLayout(node.children, depth + 1, out);
+  }
+};
+
+const renderInventory = (label, list, out) => {
+  out.push(`${label}:`);
+  if (!list.length) out.push('- _none_');
+  else for (const c of list) out.push(`- \`${c.name}\` — ${c.source}`);
+};
+
+export function renderWireframe(wf) {
+  const out = [`# ${wf.slug}`, '', '## Intent', '', '| Question | Answer |', '| --- | --- |'];
+  for (const key of INTENT_KEYS) out.push(`| ${INTENT_LABELS[key]} | ${wf.intent?.[key] ?? ''} |`);
+
+  out.push('', '## Layout', '');
+  renderLayout(wf.layout, 0, out);
+
+  out.push('', '## Components', '');
+  const components = wf.components ?? [];
+  renderInventory('Reused', components.filter((c) => c.existing), out);
+  out.push('');
+  renderInventory('New', components.filter((c) => !c.existing), out);
+
+  out.push('', '## Hierarchy', '');
+  for (const e of [...(wf.hierarchy ?? [])].sort((a, b) => a.rank - b.rank)) {
+    out.push(`${e.rank}. ${e.element}`);
+  }
+
+  out.push('', '## States', '');
+  for (const key of STATE_KEYS) out.push(`**${STATE_LABELS[key]}** — ${wf.states?.[key] ?? ''}`, '');
+
+  if (wf.revisions?.length) {
+    out.push('## Revisions', '');
+    for (const r of wf.revisions) out.push(`- ${r.at} (${r.kind}) — ${r.note}`);
+  }
+
+  return `${out.join('\n').trimEnd()}\n`;
+}

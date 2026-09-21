@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { slugify, validateIntent, validateWireframe, INTENT_KEYS, STATE_KEYS, WIREFRAME_VERSION } from '../scripts/lib/wireframe.mjs';
+import { slugify, validateIntent, validateWireframe, renderWireframe, INTENT_KEYS, STATE_KEYS, WIREFRAME_VERSION } from '../scripts/lib/wireframe.mjs';
 
 const GOOD_INTENT = {
   who: 'Risk analysts who already know the portfolio names',
@@ -309,4 +309,41 @@ test('a reused component outside the primitives directory is accepted', () => {
     wf.components.push({ name: 'ReportRow', source: 'src/features/report/row.tsx', existing: true });
     assert.deepEqual(validateWireframe(wf, PROFILE, { root }), []);
   });
+});
+
+const golden = () => JSON.parse(readFileSync(new URL('./fixtures/wireframes/risk-report-list.json', import.meta.url), 'utf8'));
+
+test('the golden fixture is a valid wireframe', () => {
+  assert.deepEqual(validateWireframe(golden(), PROFILE), []);
+});
+
+test('the rendered wireframe matches its snapshot', () => {
+  const expected = readFileSync(new URL('./snapshots/wireframe-risk-report-list.md', import.meta.url), 'utf8');
+  assert.equal(renderWireframe(golden()), expected);
+});
+
+test('the render ends in exactly one newline', () => {
+  const out = renderWireframe(golden());
+  assert.ok(out.endsWith('\n'));
+  assert.ok(!out.endsWith('\n\n'));
+});
+
+test('the hierarchy renders in rank order regardless of array order', () => {
+  const wf = golden();
+  wf.hierarchy.reverse();
+  const out = renderWireframe(wf);
+  assert.ok(out.indexOf('1. Run report button') < out.indexOf('2. Report table'));
+});
+
+test('a wireframe with no revisions has no Revisions section', () => {
+  const wf = golden();
+  delete wf.revisions;
+  assert.ok(!renderWireframe(wf).includes('## Revisions'));
+});
+
+test('a wireframe that reuses nothing still renders both inventory lists', () => {
+  const wf = golden();
+  wf.components = wf.components.filter((c) => !c.existing);
+  const out = renderWireframe(wf);
+  assert.match(out, /Reused:\n- _none_/);
 });

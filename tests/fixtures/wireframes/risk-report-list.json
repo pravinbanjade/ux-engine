@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "slug": "risk-report-list",
+  "intent": {
+    "who": "Risk analysts who already know the portfolio names",
+    "cadence": "Several times an hour during the morning close",
+    "primaryAction": "Run a fresh report against the selected portfolio",
+    "failure": "The run times out and the analyst has to explain the gap",
+    "scale": "Four hundred rows on a bad day, twelve on a normal one"
+  },
+  "layout": [
+    {
+      "region": "header",
+      "children": [
+        { "region": "portfolio selector" },
+        { "region": "run report button" }
+      ]
+    },
+    { "region": "report table" },
+    { "region": "footer with the last run time" }
+  ],
+  "components": [
+    { "name": "DataTable", "source": "src/components/ui/data-table.tsx", "existing": true },
+    { "name": "Select", "source": "src/components/ui/select.tsx", "existing": true },
+    { "name": "RiskReportRow", "source": "src/components/risk-report-row.tsx", "existing": false }
+  ],
+  "hierarchy": [
+    { "rank": 1, "element": "Run report button" },
+    { "rank": 2, "element": "Report table" },
+    { "rank": 3, "element": "Portfolio selector" },
+    { "rank": 4, "element": "Last run time" }
+  ],
+  "states": {
+    "empty": "No reports yet for this portfolio, with the run button repeated inline as the way out",
+    "loading": "Skeleton rows at the last known row count so the table does not collapse and jump",
+    "error": "The run failed, the reason the service gave, and a retry that keeps the selected portfolio",
+    "populated": "Four hundred rows paginated at fifty, newest first, with the count stated above the table"
+  },
+  "revisions": [
+    {
+      "at": "2026-09-22T10:31:00.000Z",
+      "kind": "redispatch",
+      "note": "First draft ranked the portfolio selector first. Running a report is the primary action; selecting is setup for it."
+    }
+  ]
+}
