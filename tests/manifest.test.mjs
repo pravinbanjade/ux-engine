@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const read = (p) => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
+const root = fileURLToPath(new URL('../', import.meta.url));
 
 test('plugin manifest declares required fields', () => {
   const m = read('../.claude-plugin/plugin.json');
@@ -25,4 +28,16 @@ test('package is zero-dependency ESM', () => {
   assert.equal(p.dependencies, undefined);
   assert.equal(p.devDependencies, undefined);
   assert.equal(p.scripts.test, 'node --test "tests/**/*.test.mjs"');
+});
+
+test('the plugin and package versions agree', () => {
+  const plugin = JSON.parse(readFileSync(join(root, '.claude-plugin/plugin.json'), 'utf8'));
+  const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  assert.equal(plugin.version, pkg.version);
+});
+
+test('CI runs the test suite and the library lint', () => {
+  const workflow = readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8');
+  assert.match(workflow, /npm test/);
+  assert.match(workflow, /lint:library/);
 });
