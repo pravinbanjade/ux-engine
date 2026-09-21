@@ -129,13 +129,24 @@ export function loadModes(dir) {
 // severity, category and fix line. Reading them here, once, keeps a
 // finding from ever disagreeing with the mode it names.
 function firstFixLine(body) {
-  const section = /^## Fix\n([\s\S]*?)(?=\n## |$)/m.exec(body);
+  // No /m flag: with it, `$` means end-of-line and the lazy capture stops
+  // after the heading's first line instead of running to the next section.
+  const section = /(?:^|\n)## Fix\n([\s\S]*?)(?=\n## |$)/.exec(body);
   if (!section) return '';
+  // The first *paragraph*, unwrapped — not the first line. Mode files hard-wrap
+  // their prose, so taking one line hands a report a sentence fragment ending
+  // mid-clause, which is worse than no advice at all.
+  const paragraph = [];
   for (const line of section[1].split('\n')) {
     const text = line.trim();
-    if (text && !text.startsWith('#')) return text;
+    if (text.startsWith('#')) continue;
+    if (!text) {
+      if (paragraph.length) break;
+      continue;
+    }
+    paragraph.push(text);
   }
-  return '';
+  return paragraph.join(' ');
 }
 
 export function modeIndex(dir) {

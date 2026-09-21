@@ -207,3 +207,11 @@ test('--path with --scope diff is an argument error', () => {
   assert.match(stderr, /--path/);
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('the rendered report matches its committed snapshot', () => {
+  const dir = workspace();
+  const { stdout } = run(base(dir), dir);
+  const snapshot = readFileSync(fileURLToPath(new URL('./snapshots/report-tailwind-shadcn.md', import.meta.url)), 'utf8');
+  assert.equal(stdout, snapshot);
+  rmSync(dir, { recursive: true, force: true });
+});

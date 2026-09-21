@@ -171,3 +171,9 @@ test('modeIndex fix line excludes the heading itself', () => {
     assert.ok(!mode.fix.startsWith('#'), `${mode.id}: fix line must not be a heading`);
   }
 });
+
+test('modeIndex fix line is a whole paragraph, not a wrapped fragment', () => {
+  for (const mode of modeIndex(modesDir).values()) {
+    assert.match(mode.fix, /[.!?]$/, `${mode.id}: fix must end as a complete sentence, got "${mode.fix}"`);
+  }
+});
