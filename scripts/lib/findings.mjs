@@ -118,3 +118,48 @@ export function rankFindings(findings) {
     return (a.line ?? -1) - (b.line ?? -1);
   });
 }
+
+const LABEL = { high: 'High', medium: 'Medium', low: 'Low' };
+
+const cite = (finding) => (finding.line === null || finding.line === undefined
+  ? `\`${finding.file}\``
+  : `\`${finding.file}:${finding.line}\``);
+
+export function renderReport(envelope, modes) {
+  const counts = { high: 0, medium: 0, low: 0 };
+  for (const finding of envelope.findings) counts[finding.severity] += 1;
+
+  const summary = [
+    `scope: ${envelope.scope.kind} \`${envelope.scope.value}\``,
+    `${counts.high} high · ${counts.medium} medium · ${counts.low} low`,
+  ];
+  if (envelope.exceptionsApplied) summary.push(`${envelope.exceptionsApplied} exceptions applied`);
+  if (envelope.skipped.length) summary.push(`${envelope.skipped.length} skipped`);
+
+  const out = ['# UX findings', '', summary.join(' · '), ''];
+
+  if (!envelope.findings.length) {
+    out.push('No findings.', '');
+  }
+
+  for (const severity of ['high', 'medium', 'low']) {
+    const group = envelope.findings.filter((x) => x.severity === severity);
+    if (!group.length) continue;
+    out.push(`## ${LABEL[severity]}`, '');
+    for (const finding of group) {
+      out.push(`- **${finding.id}** · ${cite(finding)} — ${finding.message}`);
+      if (finding.evidence) out.push(`  - Evidence: ${finding.evidence}`);
+      const fix = modes.get(finding.id)?.fix;
+      if (fix) out.push(`  - Fix: ${fix}`);
+    }
+    out.push('');
+  }
+
+  if (envelope.skipped.length) {
+    out.push('## Skipped', '');
+    for (const s of envelope.skipped) out.push(`- \`${s.file}\` — ${s.reason}`);
+    out.push('');
+  }
+
+  return out.join('\n');
+}

@@ -186,3 +186,58 @@ test('rankFindings does not mutate its input', () => {
   rankFindings(input);
   assert.deepEqual(input, copy);
 });
+
+import { renderReport } from '../scripts/lib/findings.mjs';
+
+const envelopeWith = (findings, extra = {}) => buildEnvelope({
+  findings: rankFindings(findings),
+  skipped: [],
+  profileHash: 'ab12',
+  scope: { kind: 'path', value: 'src/' },
+  generatedAt: '2026-09-21T00:00:00.000Z',
+  ...extra,
+});
+
+test('renderReport summarises counts and scope without a timestamp', () => {
+  const report = renderReport(envelopeWith([
+    { ...f({}), severity: 'high', id: 'UX-046' },
+    f({}),
+  ]), modes);
+  assert.match(report, /# UX findings/);
+  assert.match(report, /scope: path `src\/`/);
+  assert.match(report, /1 high · 0 medium · 1 low/);
+  assert.ok(!report.includes('2026-09-21T00:00:00.000Z'), 'report must stay snapshot-stable');
+});
+
+test('renderReport groups by severity and cites file:line and the mode fix', () => {
+  const report = renderReport(envelopeWith([
+    { ...f({}), id: 'UX-046', severity: 'high', source: 'model', file: 'src/UserList.tsx', line: 18, evidence: 'no empty branch', message: 'List has no empty state.' },
+  ]), modes);
+  assert.match(report, /## High/);
+  assert.match(report, /\*\*UX-046\*\* · `src\/UserList\.tsx:18` — List has no empty state\./);
+  assert.match(report, /Evidence: no empty branch/);
+  assert.match(report, new RegExp(`Fix: ${modes.get('UX-046').fix.slice(0, 20).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+});
+
+test('renderReport writes a file-level finding without a line number', () => {
+  const report = renderReport(envelopeWith([{ ...f({}), id: 'UX-046', severity: 'high', line: null, file: 'src/A.tsx' }]), modes);
+  assert.match(report, /`src\/A\.tsx`/);
+  assert.ok(!report.includes('src/A.tsx:'), 'no dangling colon for a file-level finding');
+});
+
+test('renderReport says so when there is nothing to report', () => {
+  assert.match(renderReport(envelopeWith([]), modes), /No findings/);
+});
+
+test('renderReport reports exceptions applied and skipped files', () => {
+  const envelope = buildEnvelope({
+    findings: [], skipped: [{ file: 'src/Legacy.tsx', reason: 'parse-error:TypeError' }],
+    profileHash: 'ab12', scope: { kind: 'diff', value: 'HEAD' }, exceptionsApplied: 2,
+    generatedAt: '2026-09-21T00:00:00.000Z',
+  });
+  const report = renderReport(envelope, modes);
+  assert.match(report, /scope: diff `HEAD`/);
+  assert.match(report, /2 exceptions applied/);
+  assert.match(report, /## Skipped/);
+  assert.match(report, /`src\/Legacy\.tsx` — parse-error:TypeError/);
+});
