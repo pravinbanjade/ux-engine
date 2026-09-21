@@ -234,7 +234,10 @@ function scanLiterals(text) {
     if (raw.includes('ux-engine-ignore')) return;
     if (isCommentLine(raw)) return;
     // A line that only references tokens is on-system by construction.
-    const line = raw.replace(/var\(--[A-Za-z0-9_-]+\)/g, '');
+    // Blank the reference rather than delete it: every column reported
+    // below is an offset into the real line, and deleting text would also
+    // let two unrelated fragments abut and manufacture a match.
+    const line = raw.replace(/var\(--[A-Za-z0-9_-]+\)/g, (ref) => ' '.repeat(ref.length));
     for (const { kind, re, validate } of PATTERNS) {
       re.lastIndex = 0;
       let m;
@@ -255,15 +258,21 @@ function scanLiterals(text) {
           if (scalar && scalar.value === 0) continue;
         }
         const hint = kind === 'length' ? contextHint(line, m.index) : null;
-        out.push({ line: index + 1, value: m[0], kind, hint });
+        out.push({ line: index + 1, column: m.index + 1, value: m[0], kind, hint });
       }
     }
   });
-  return out.sort((a, b) => a.line - b.line);
+  return out.sort((a, b) => (a.line - b.line) || (a.column - b.column));
 }
 
-export function findLiterals(text) {
+export function findLiteralsAt(text) {
   return scanLiterals(text).map(({ hint, ...rest }) => rest);
+}
+
+// The narrow shape, kept because it is what the scanner's own tests assert
+// against and what reads clearly when position is irrelevant.
+export function findLiterals(text) {
+  return findLiteralsAt(text).map(({ column, ...rest }) => rest);
 }
 
 export function nearestToken(literal, tokens, thresholds) {
@@ -334,6 +343,7 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
           id: KIND_TO_ID[literal.kind],
           file,
           line: literal.line,
+          column: literal.column,
           value: literal.value,
           kind: literal.kind,
           nearestToken: hit?.token ?? null,

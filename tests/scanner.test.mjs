@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, execSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildProfile } from '../scripts/lib/profile.mjs';
-import { findLiterals, nearestToken, scanRepo, DEFAULT_THRESHOLDS } from '../scripts/lib/scanner.mjs';
+import { findLiterals, findLiteralsAt, nearestToken, scanRepo, DEFAULT_THRESHOLDS } from '../scripts/lib/scanner.mjs';
 
 const fixture = (n) => fileURLToPath(new URL(`../tests/fixtures/${n}/`, import.meta.url));
 const cli = fileURLToPath(new URL('../scripts/scan-off-system.mjs', import.meta.url));
@@ -445,4 +445,46 @@ test('scanRepo continues scanning other files when one file has a read error, co
     }
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('findLiteralsAt reports a 1-based column', () => {
+  const raw = 'color: #3b7d4f;\n';
+  const [found] = findLiteralsAt(raw);
+  assert.equal(found.column, raw.indexOf('#3b7d4f') + 1);
+  assert.equal(found.value, '#3b7d4f');
+});
+
+test('a stripped var() reference does not shift the columns after it', () => {
+  // The scanner blanks `var(--x)` before matching so a token reference is
+  // never itself a finding. Blanking must preserve length: deleting it
+  // would make every column to its right point at the wrong character.
+  const raw = 'border: var(--border-width) solid #3b7d4f; padding: 17px;\n';
+  const found = findLiteralsAt(raw);
+  const colour = found.find((f) => f.value === '#3b7d4f');
+  const length = found.find((f) => f.value === '17px');
+  assert.equal(colour.column, raw.indexOf('#3b7d4f') + 1);
+  assert.equal(length.column, raw.indexOf('17px') + 1);
+});
+
+test('two identical literals on one line get distinct columns', () => {
+  const raw = 'padding: 17px; margin: 17px;\n';
+  const found = findLiteralsAt(raw).filter((f) => f.value === '17px');
+  assert.equal(found.length, 2);
+  assert.equal(found[0].column, raw.indexOf('17px') + 1);
+  assert.equal(found[1].column, raw.lastIndexOf('17px') + 1);
+});
+
+test('findLiterals keeps its column-free shape', () => {
+  // 49 assertions in this file deepEqual against {line, value, kind}.
+  // findLiteralsAt is the positional API; findLiterals is not widened.
+  assert.deepEqual(findLiterals('color: #3b7d4f;\n'), [{ line: 1, value: '#3b7d4f', kind: 'color' }]);
+});
+
+test('scanRepo findings carry the column of the literal', () => {
+  const root = fixture('tailwind-shadcn');
+  const { findings } = scanRepo(root, buildProfile(root), {});
+  const colour = findings.find((f) => f.id === 'UX-101' && f.file === 'src/components/Offender.tsx');
+  const source = readFileSync(join(root, 'src/components/Offender.tsx'), 'utf8').split('\n');
+  const lineText = source[colour.line - 1];
+  assert.equal(lineText.slice(colour.column - 1, colour.column - 1 + colour.value.length), colour.value);
 });
