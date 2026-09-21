@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { substitutionFor, planSubstitutions, applyEdits } from '../scripts/lib/restyle.mjs';
+import { substitutionFor, planSubstitutions, applyEdits, renderPlan } from '../scripts/lib/restyle.mjs';
 
 const at = (lineText, value, token) => substitutionFor({
   lineText,
@@ -224,4 +224,55 @@ test('a file with no trailing newline keeps not having one', () => {
     applyEdits([{ id: 'UX-101', file: 'src/A.tsx', line: 1, column: line.indexOf('#3b7d4f') + 1, value: '#3b7d4f', token: '--color-primary', replacement: 'var(--color-primary)' }], { root });
     assert.equal(readFileSync(join(root, 'src/A.tsx'), 'utf8'), "const s = { color: 'var(--color-primary)' };");
   });
+});
+
+const samplePlan = () => ({
+  edits: [
+    { id: 'UX-101', file: 'src/A.tsx', line: 4, column: 22, value: '#3b7d4f', token: '--color-primary', replacement: 'var(--color-primary)' },
+    { id: 'UX-102', file: 'src/A.tsx', line: 4, column: 44, value: '17px', token: '--spacing-4', replacement: 'var(--spacing-4)' },
+    { id: 'UX-101', file: 'src/B.tsx', line: 9, column: 10, value: '#3b7d4f', token: '--color-primary', replacement: 'var(--color-primary)' },
+  ],
+  manual: [
+    { id: 'UX-101', file: 'src/C.tsx', line: 3, value: '#3b7d4f', nearestToken: '--color-primary', reason: 'arbitrary-utility-value' },
+  ],
+  judgment: [
+    { id: 'UX-046', file: 'src/List.tsx', line: 18, message: 'List has no empty state.' },
+  ],
+});
+
+test('renderPlan counts substitutions, manual work and judgment separately', () => {
+  const out = renderPlan(samplePlan());
+  assert.match(out, /3 substitutions in 2 files/);
+  assert.match(out, /1 needs a human/);
+  assert.match(out, /1 needs judgment/);
+});
+
+test('renderPlan groups substitutions by file and cites the exact position', () => {
+  const out = renderPlan(samplePlan());
+  assert.match(out, /### `src\/A\.tsx`/);
+  assert.match(out, /### `src\/B\.tsx`/);
+  assert.match(out, /- L4:22 `#3b7d4f` → `var\(--color-primary\)` \(UX-101\)/);
+});
+
+test('renderPlan says why each manual item was left alone, with the token to use', () => {
+  const out = renderPlan(samplePlan());
+  assert.match(out, /`src\/C\.tsx:3` — `#3b7d4f` → `--color-primary`: arbitrary-utility-value/);
+});
+
+test('renderPlan lists judgment findings without proposing an edit', () => {
+  const out = renderPlan(samplePlan());
+  assert.match(out, /\*\*UX-046\*\* · `src\/List\.tsx:18` — List has no empty state\./);
+  assert.ok(!/UX-046.*→/.test(out), 'a judgment finding has no mechanical arrow');
+});
+
+test('renderPlan on an empty plan says there is nothing to do', () => {
+  const out = renderPlan({ edits: [], manual: [], judgment: [] });
+  assert.match(out, /Nothing to restyle\./);
+});
+
+test('renderPlan omits a section that has no rows', () => {
+  const out = renderPlan({ edits: [], manual: [], judgment: [{ id: 'UX-046', file: 'src/List.tsx', line: 18, message: 'List has no empty state.' }] });
+  assert.ok(!/## Substitutions/.test(out));
+  assert.ok(!/## Needs a human/.test(out));
+  assert.match(out, /## Needs judgment/);
 });

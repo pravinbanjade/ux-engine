@@ -136,3 +136,63 @@ export function applyEdits(edits, { root, dryRun = false }) {
 
   return { files, failed, applied: files.reduce((n, f) => n + f.edits, 0) };
 }
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+const cite = (row) => (row.line === null || row.line === undefined
+  ? `\`${row.file}\``
+  : `\`${row.file}:${row.line}\``);
+
+export function renderPlan({ edits, manual, judgment }) {
+  const fileCount = new Set(edits.map((e) => e.file)).size;
+
+  const summary = [
+    `${plural(edits.length, 'substitution', 'substitutions')} in ${plural(fileCount, 'file', 'files')}`,
+  ];
+  if (manual.length) summary.push(`${manual.length} ${manual.length === 1 ? 'needs' : 'need'} a human`);
+  if (judgment.length) summary.push(`${judgment.length} ${judgment.length === 1 ? 'needs' : 'need'} judgment`);
+
+  const out = ['# UX restyle plan', ''];
+  if (!edits.length && !manual.length && !judgment.length) {
+    out.push('Nothing to restyle.', '');
+    return out.join('\n');
+  }
+  out.push(summary.join(' · '), '');
+
+  if (edits.length) {
+    out.push('## Substitutions', '');
+    const byFile = new Map();
+    for (const edit of edits) {
+      if (!byFile.has(edit.file)) byFile.set(edit.file, []);
+      byFile.get(edit.file).push(edit);
+    }
+    for (const [file, list] of byFile) {
+      out.push(`### \`${file}\``, '');
+      for (const edit of list) {
+        out.push(`- L${edit.line}:${edit.column} \`${edit.value}\` → \`${edit.replacement}\` (${edit.id})`);
+      }
+      out.push('');
+    }
+  }
+
+  // Manual rows still carry the answer — the token to use — so this list is
+  // a work queue, not a shrug.
+  if (manual.length) {
+    out.push('## Needs a human', '');
+    for (const row of manual) {
+      const target = row.nearestToken ? ` → \`${row.nearestToken}\`` : '';
+      out.push(`- ${cite(row)} — \`${row.value}\`${target}: ${row.reason}`);
+    }
+    out.push('');
+  }
+
+  if (judgment.length) {
+    out.push('## Needs judgment', '');
+    for (const row of judgment) {
+      out.push(`- **${row.id}** · ${cite(row)} — ${row.message}`);
+    }
+    out.push('');
+  }
+
+  return out.join('\n');
+}
