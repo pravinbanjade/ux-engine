@@ -61,3 +61,22 @@ test('no skill or command hardcodes a stack name outside an example', () => {
     }
   }
 });
+
+test('the audit skill and both commands exist', () => {
+  assert.ok(existsSync(join(root, 'skills/ux-audit/SKILL.md')));
+  assert.ok(existsSync(join(root, 'commands/ux-audit.md')));
+  assert.ok(existsSync(join(root, 'commands/ux-review.md')));
+});
+
+test('the audit skill routes every mechanical step through a script', () => {
+  const skill = readFileSync(join(root, 'skills/ux-audit/SKILL.md'), 'utf8');
+  for (const script of ['check-profile.mjs', 'scan-off-system.mjs', 'report-findings.mjs']) {
+    assert.match(skill, new RegExp(script.replace('.', '\\.')), `skill must call ${script}`);
+  }
+  assert.match(skill, /INDEX\.md/, 'skill must read the index before any mode file');
+});
+
+test('the review command scopes to the diff and the audit command to a path', () => {
+  assert.match(readFileSync(join(root, 'commands/ux-review.md'), 'utf8'), /--scope diff/);
+  assert.match(readFileSync(join(root, 'commands/ux-audit.md'), 'utf8'), /--scope path/);
+});
