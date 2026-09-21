@@ -80,3 +80,28 @@ test('the review command scopes to the diff and the audit command to a path', ()
   assert.match(readFileSync(join(root, 'commands/ux-review.md'), 'utf8'), /--scope diff/);
   assert.match(readFileSync(join(root, 'commands/ux-audit.md'), 'utf8'), /--scope path/);
 });
+
+test('the restyle skill and command exist', () => {
+  assert.ok(existsSync(join(root, 'skills/ux-restyle/SKILL.md')));
+  assert.ok(existsSync(join(root, 'commands/ux-restyle.md')));
+});
+
+test('the restyle skill routes every mechanical step through a script', () => {
+  const skill = readFileSync(join(root, 'skills/ux-restyle/SKILL.md'), 'utf8');
+  for (const script of ['check-profile.mjs', 'scan-off-system.mjs', 'report-findings.mjs', 'restyle.mjs']) {
+    assert.match(skill, new RegExp(script.replace('.', '\\.')), `skill must call ${script}`);
+  }
+});
+
+test('the restyle skill previews before it writes', () => {
+  const skill = readFileSync(join(root, 'skills/ux-restyle/SKILL.md'), 'utf8');
+  const preview = skill.indexOf('--dry-run');
+  assert.ok(preview > -1, 'skill must run a dry run');
+  assert.ok(preview < skill.indexOf('without `--dry-run`'), 'the dry run must come first');
+});
+
+test('the restyle skill refuses to reuse a stale findings file', () => {
+  const skill = readFileSync(join(root, 'skills/ux-restyle/SKILL.md'), 'utf8');
+  assert.match(skill, /\.ux-engine\/findings\.json/);
+  assert.match(skill, /do not reuse/i);
+});
