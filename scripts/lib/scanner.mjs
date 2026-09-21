@@ -318,6 +318,10 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
     // just the one call site that happened to throw today. A file that
     // fails partway through contributes no findings at all rather than a
     // half-scanned mix, matching how a read failure above is handled.
+    // The error's identity is recorded in the reason field (e.g.
+    // "parse-error:TypeError") so a future defect is distinguishable from a
+    // genuinely unparseable file; the "parse-error" prefix is kept so any
+    // consumer matching on it still works.
     const startLength = findings.length;
     try {
       for (const literal of scanLiterals(text)) {
@@ -336,9 +340,10 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
           distance: hit?.distance ?? null,
         });
       }
-    } catch {
+    } catch (error) {
       findings.length = startLength;
-      skipped.push({ file, reason: 'parse-error' });
+      const errorType = error?.constructor?.name ?? 'Error';
+      skipped.push({ file, reason: `parse-error:${errorType}` });
     }
   }
   return { findings, skipped };

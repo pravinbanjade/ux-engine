@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { extractCustomProperties, groupTokens, TOKEN_KINDS } from './tokens.mjs';
 import { readManifest, detectStyling, detectComponents, detectConventions } from './detect.mjs';
@@ -151,21 +151,41 @@ export function buildProfile(root, { now = new Date().toISOString(), overrides =
   // simply does not exist (a bad hand edit, not an attack, but an ENOENT
   // that used to crash this loop outright).
   const resolvedRoot = resolve(root);
+  let realRoot;
+  try {
+    realRoot = realpathSync(resolvedRoot);
+  } catch {
+    realRoot = resolvedRoot;
+  }
   const tokenSourceCandidates = safeOverrides['styling.tokenSource'] ?? styling.tokenSource;
   const tokenSource = [];
   let props = {};
   for (const file of tokenSourceCandidates) {
     const full = resolve(join(root, file));
-    if (!isWithinRoot(resolvedRoot, full)) {
+    let realFull;
+    try {
+      realFull = realpathSync(full);
+    } catch {
+      // Broken symlink or missing file
+      console.warn(`ux-engine: skipping styling.tokenSource entry that does not exist: ${file}`);
+      continue;
+    }
+    if (!isWithinRoot(realRoot, realFull)) {
       console.warn(`ux-engine: refusing styling.tokenSource entry outside the repository root: ${file}`);
       continue;
     }
-    if (!existsSync(full)) {
+    try {
+      const stat = statSync(realFull);
+      if (!stat.isFile()) {
+        console.warn(`ux-engine: skipping styling.tokenSource entry that is not a regular file: ${file}`);
+        continue;
+      }
+    } catch {
       console.warn(`ux-engine: skipping styling.tokenSource entry that does not exist: ${file}`);
       continue;
     }
     tokenSource.push(file);
-    props = { ...props, ...extractCustomProperties(readFileSync(full, 'utf8')) };
+    props = { ...props, ...extractCustomProperties(readFileSync(realFull, 'utf8')) };
   }
   const tokens = groupTokens(props);
 
@@ -283,12 +303,30 @@ export function validateProfile(profile) {
 // read — exactly like a deleted source file already is below.
 export function stalePaths(root, profile) {
   const resolvedRoot = resolve(root);
+  let realRoot;
+  try {
+    realRoot = realpathSync(resolvedRoot);
+  } catch {
+    realRoot = resolvedRoot;
+  }
   return profile.derivedFrom
     .filter(({ path, sha256: recorded }) => {
       const full = resolve(join(root, path));
-      if (!isWithinRoot(resolvedRoot, full)) return true;
-      if (!existsSync(full)) return true;
-      return sha256(readFileSync(full)) !== recorded;
+      let realFull;
+      try {
+        realFull = realpathSync(full);
+      } catch {
+        // Broken symlink or missing file
+        return true;
+      }
+      if (!isWithinRoot(realRoot, realFull)) return true;
+      try {
+        const stat = statSync(realFull);
+        if (!stat.isFile()) return true;
+      } catch {
+        return true;
+      }
+      return sha256(readFileSync(realFull)) !== recorded;
     })
     .map(({ path }) => path);
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -202,9 +202,8 @@ test('an override for styling.tokenSource that is not an array of strings is ign
   }
 });
 
-test('a styling.tokenSource entry that escapes the repository root is dropped: contributes no tokens and no derivedFrom entry', () => {
+test('a styling.tokenSource entry with a relative escape (../) is refused: contributes no tokens and no derivedFrom entry', () => {
   const root = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-'));
-  const outside = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-outside-'));
   try {
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'scratch', private: true }));
     mkdirSync(join(root, 'src/styles'), { recursive: true });
@@ -213,17 +212,14 @@ test('a styling.tokenSource entry that escapes the repository root is dropped: c
       join(root, 'src/styles/app.css'),
       ':root {\n  --color-primary: #111111;\n  --color-secondary: #222222;\n}\n',
     );
-    // A hostile out-of-repo stylesheet
-    writeFileSync(
-      join(outside, 'secret.css'),
-      ':root {\n  --color-secret: #333333;\n}\n',
-    );
+    // A hostile escape path pointing outside repo
+    // Note: we don't actually create the file since the containment check happens before existsSync
 
-    // Override with both an in-repo and an out-of-repo stylesheet
+    // Override with both an in-repo and an escape path
     const p = buildProfile(root, {
       now: NOW,
       overrides: {
-        'styling.tokenSource': ['src/styles/app.css', `${outside}/secret.css`],
+        'styling.tokenSource': ['src/styles/app.css', '../secret.css'],
       },
     });
 
@@ -232,6 +228,123 @@ test('a styling.tokenSource entry that escapes the repository root is dropped: c
     // Only the legitimate token is extracted
     assert.equal(p.tokens.color['--color-primary'], '#111111');
     assert.equal(p.tokens.color['--color-secondary'], '#222222');
+    assert.equal(p.tokens.color['--color-secret'], undefined);
+    // Only the legitimate file is in derivedFrom
+    assert.ok(p.derivedFrom.some((e) => e.path === 'src/styles/app.css'));
+    assert.ok(!p.derivedFrom.some((e) => e.path.includes('secret.css')));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a styling.tokenSource entry that is a symlink pointing outside the repo is refused', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-'));
+  const outside = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-outside-'));
+  try {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'scratch', private: true }));
+    mkdirSync(join(root, 'src/styles'), { recursive: true });
+    // A legitimate in-repo stylesheet
+    writeFileSync(
+      join(root, 'src/styles/app.css'),
+      ':root {\n  --color-primary: #111111;\n}\n',
+    );
+    // An out-of-repo stylesheet
+    writeFileSync(
+      join(outside, 'secret.css'),
+      ':root {\n  --color-secret: #333333;\n}\n',
+    );
+
+    // Create an in-repo symlink pointing to the out-of-repo file
+    try {
+      symlinkSync(join(outside, 'secret.css'), join(root, 'src/styles/linked.css'));
+    } catch (e) {
+      // Skip test if platform cannot create symlinks
+      console.log('Skipping symlink test: platform does not support symlinks');
+      return;
+    }
+
+    // Override with both an in-repo file and an in-repo symlink to an outside file
+    const p = buildProfile(root, {
+      now: NOW,
+      overrides: {
+        'styling.tokenSource': ['src/styles/app.css', 'src/styles/linked.css'],
+      },
+    });
+
+    // Only the legitimate in-repo file is recorded, the symlink escape is refused
+    assert.deepEqual(p.styling.tokenSource, ['src/styles/app.css']);
+    // Only the legitimate token is extracted
+    assert.equal(p.tokens.color['--color-primary'], '#111111');
+    assert.equal(p.tokens.color['--color-secret'], undefined);
+    // Only the legitimate file is in derivedFrom
+    assert.ok(p.derivedFrom.some((e) => e.path === 'src/styles/app.css'));
+    assert.ok(!p.derivedFrom.some((e) => e.path.includes('linked.css')));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('a styling.tokenSource entry naming a directory is skipped with a warning', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-'));
+  try {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'scratch', private: true }));
+    mkdirSync(join(root, 'src/styles'), { recursive: true });
+    // A legitimate in-repo stylesheet
+    writeFileSync(
+      join(root, 'src/styles/app.css'),
+      ':root {\n  --color-primary: #111111;\n}\n',
+    );
+
+    // Override with both a file and a directory
+    const p = buildProfile(root, {
+      now: NOW,
+      overrides: {
+        'styling.tokenSource': ['src/styles/app.css', 'src/styles'],
+      },
+    });
+
+    // Only the file entry is recorded, the directory is skipped
+    assert.deepEqual(p.styling.tokenSource, ['src/styles/app.css']);
+    // Only the file token is extracted
+    assert.equal(p.tokens.color['--color-primary'], '#111111');
+    // Only the file is in derivedFrom
+    assert.ok(p.derivedFrom.some((e) => e.path === 'src/styles/app.css'));
+    assert.ok(!p.derivedFrom.some((e) => e.path === 'src/styles'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a styling.tokenSource entry with an absolute path is skipped if outside the repo', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-'));
+  const outside = mkdtempSync(join(tmpdir(), 'ux-engine-profile-test-outside-'));
+  try {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'scratch', private: true }));
+    mkdirSync(join(root, 'src/styles'), { recursive: true });
+    // A legitimate in-repo stylesheet
+    writeFileSync(
+      join(root, 'src/styles/app.css'),
+      ':root {\n  --color-primary: #111111;\n}\n',
+    );
+    // An out-of-repo stylesheet
+    writeFileSync(
+      join(outside, 'secret.css'),
+      ':root {\n  --color-secret: #333333;\n}\n',
+    );
+
+    // Override with both an in-repo file and an absolute outside path
+    const p = buildProfile(root, {
+      now: NOW,
+      overrides: {
+        'styling.tokenSource': ['src/styles/app.css', join(outside, 'secret.css')],
+      },
+    });
+
+    // Only the legitimate in-repo entry is recorded
+    assert.deepEqual(p.styling.tokenSource, ['src/styles/app.css']);
+    // Only the legitimate token is extracted
+    assert.equal(p.tokens.color['--color-primary'], '#111111');
     assert.equal(p.tokens.color['--color-secret'], undefined);
     // Only the legitimate file is in derivedFrom
     assert.ok(p.derivedFrom.some((e) => e.path === 'src/styles/app.css'));

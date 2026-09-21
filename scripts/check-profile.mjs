@@ -19,15 +19,20 @@ try {
   process.exit(3);
 }
 
-const defect = validateProfile(profile);
-if (defect) {
-  console.error(`${defect} Run /ux-design-system first.`);
+if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+  console.error('Profile is not a JSON object. Run /ux-design-system first.');
   process.exit(3);
 }
 
 if (profile.version > SCHEMA_VERSION) {
   console.error(`Profile schema v${profile.version} is newer than this plugin (v${SCHEMA_VERSION}). Update ux-engine.`);
   process.exit(4);
+}
+
+const defect = validateProfile(profile);
+if (defect) {
+  console.error(`${defect} Run /ux-design-system first.`);
+  process.exit(3);
 }
 
 const changed = stalePaths(root, profile);

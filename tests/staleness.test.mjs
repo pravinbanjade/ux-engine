@@ -88,6 +88,18 @@ test('CLI exits 4 for a newer schema version', (t) => {
   assert.match(result.stderr, /newer than this plugin/);
 });
 
+test('CLI exits 4 for a reshaped newer-schema profile (even if structurally invalid)', (t) => {
+  const dir = scratch();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, '.ux-engine'), { recursive: true });
+  // A v2 profile with minimal valid fields for version check but invalid for validateProfile
+  const profile = { version: 2, derivedFrom: [], stylingSources: {} };
+  writeFileSync(join(dir, '.ux-engine/profile.json'), JSON.stringify(profile, null, 2));
+  const result = run(dir);
+  assert.equal(result.status, 4);
+  assert.match(result.stderr, /newer than this plugin/);
+});
+
 test('CLI exits 3 for invalid JSON', (t) => {
   const dir = scratch();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
