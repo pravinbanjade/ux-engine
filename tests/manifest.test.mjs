@@ -41,3 +41,9 @@ test('CI runs the test suite and the library lint', () => {
   assert.match(workflow, /npm test/);
   assert.match(workflow, /lint:library/);
 });
+
+test('the plugin ships the restyle command', () => {
+  // A command file with no entry in the README is a command nobody finds.
+  const readme = readFileSync(join(root, 'README.md'), 'utf8');
+  assert.match(readme, /\/ux-restyle/);
+});

@@ -1,6 +1,6 @@
 {
   "name": "ux-engine",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Embeds senior design reasoning into AI-generated UI: detects the design system a project already has, then generates, audits and repairs interfaces against a catalog of named UX failure modes.",
   "author": {
     "name": "Pravin Banjade"

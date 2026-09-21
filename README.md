@@ -17,6 +17,9 @@ of named UX failure modes.
 2. `/ux-audit [path]` — audit existing UI. Read-only.
 3. `/ux-review [base]` — audit only what the working diff touched. Cheap enough
    to run before every commit; exits non-zero on a high-severity finding.
+4. `/ux-restyle [path]` — repair what an audit found. Off-system literals are
+   substituted for their nearest token by a script, after you approve the
+   plan; anything needing judgment is proposed, not applied.
 
 ## What it writes into your repo
 
@@ -36,6 +39,21 @@ UX-101 | src/legacy/** | pre-migration theme, scheduled for removal
 ```
 
 Matching findings stop being reported and are counted in the report summary.
+
+## When a token group is too thin to be a scale
+
+A mode whose advice is "snap to the nearest step in the scale" has nothing to
+offer when the group it would snap to holds fewer than three distinct values.
+Rather than report hundreds of findings measured against a scale that is not
+there, the scanner suppresses that mode and says so:
+
+```
+UX-102 suppressed for spacing|radius|type — 2 distinct values, not a scale (775 literals)
+```
+
+A suppression is not a pass. It means the recorded design system is too thin
+for that check, and the remedy is to add tokens — or to correct
+`styling.tokenSource` if the real ones were never found.
 
 ## The failure-mode library
 
