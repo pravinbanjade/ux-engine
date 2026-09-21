@@ -3,10 +3,13 @@ import { join } from 'node:path';
 
 export const CATEGORIES = [
   'information-architecture', 'interaction', 'visual-hierarchy', 'state-coverage',
-  'forms', 'data-display', 'accessibility', 'system-consistency',
+  'forms', 'data-display', 'accessibility', 'system-consistency', 'conformance',
 ];
 export const SEVERITIES = ['high', 'medium', 'low'];
-export const DETECTIONS = ['model', 'scanner', 'hybrid'];
+// `conformance` findings need an approved wireframe to compare against, which
+// only /ux-design has. /ux-audit skips them for the same reason it skips
+// `scanner` modes: something else is already answering that question.
+export const DETECTIONS = ['model', 'scanner', 'hybrid', 'conformance'];
 
 const REQUIRED_SECTIONS = [
   '## Signal',

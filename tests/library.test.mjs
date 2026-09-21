@@ -152,12 +152,17 @@ test('checkIndex requires ID-sorted order', () => {
 
 import { modeIndex } from '../scripts/lib/library.mjs';
 import { fileURLToPath } from 'node:url';
+import { readdirSync } from 'node:fs';
 
 const modesDir = fileURLToPath(new URL('../skills/failure-modes/references/', import.meta.url));
 
 test('modeIndex maps every mode id to its metadata', () => {
   const index = modeIndex(modesDir);
-  assert.equal(index.size, 22);
+  // Derived, not hardcoded: what this test claims is that every mode file on
+  // disk made it into the index, and a literal count only says that until the
+  // next mode is written.
+  const fileCount = readdirSync(modesDir).filter((f) => /^UX-\d{3}-.*\.md$/.test(f)).length;
+  assert.equal(index.size, fileCount);
   const mode = index.get('UX-101');
   assert.equal(mode.id, 'UX-101');
   assert.equal(mode.category, 'system-consistency');

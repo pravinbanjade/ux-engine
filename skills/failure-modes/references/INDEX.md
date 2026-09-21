@@ -20,3 +20,6 @@ UX-092 | accessibility | high | model | Colour is the only signal distinguishing
 UX-101 | system-consistency | high | scanner | Hard-coded colour literal bypasses the token system
 UX-102 | system-consistency | medium | scanner | Hard-coded spacing value bypasses the spacing scale
 UX-103 | system-consistency | low | scanner | Hard-coded animation duration bypasses the motion tokens
+UX-111 | conformance | high | conformance | Approved state has no branch in the implementation
+UX-112 | conformance | medium | conformance | Implementation contradicts the approved hierarchy
+UX-113 | conformance | low | conformance | Component used that was not in the approved inventory

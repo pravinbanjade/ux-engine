@@ -40,7 +40,9 @@ cannot do: deciding whether a component actually exhibits a failure mode.
    detail view, a dialog. Pick the modes whose category and `appliesTo` match
    what you are actually looking at — a form pulls forms and state-coverage
    modes, a data table pulls data-display and information-architecture. Skip
-   `detection: scanner` modes; the scanner already reported those.
+   `detection: scanner` modes; the scanner already reported those. Skip
+   `detection: conformance` modes too — they compare code against an approved
+   wireframe, which only the generation command has.
 
 5. **Read only the selected mode files, then judge.**
    For each candidate mode, read its file and check the code against its

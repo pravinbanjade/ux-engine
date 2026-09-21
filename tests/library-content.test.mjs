@@ -68,3 +68,21 @@ test('no mode names a specific framework or design-system product', () => {
     }
   }
 });
+
+test('the three conformance modes exist and are detected as conformance', () => {
+  for (const id of ['UX-111', 'UX-112', 'UX-113']) {
+    const mode = modes.find((m) => m.data.id === id);
+    assert.ok(mode, `${id} missing`);
+    assert.equal(mode.data.category, 'conformance');
+    assert.equal(mode.data.detection, 'conformance');
+  }
+});
+
+test('the audit skill tells the reader to skip conformance modes', () => {
+  // /ux-audit has no approved wireframe, so a conformance mode has nothing to
+  // compare against. Without this clause the skill would read the mode file,
+  // find no wireframe, and either invent one or report nothing — both worse
+  // than not selecting it.
+  const skill = readFileSync(fileURLToPath(new URL('../skills/ux-audit/SKILL.md', import.meta.url)), 'utf8');
+  assert.match(skill, /detection: conformance/);
+});
