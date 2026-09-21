@@ -241,3 +241,29 @@ test('renderReport reports exceptions applied and skipped files', () => {
   assert.match(report, /## Skipped/);
   assert.match(report, /`src\/Legacy\.tsx` — parse-error:TypeError/);
 });
+
+test('mergeFindings keeps two distinct literals reported on the same line', () => {
+  // One line can hold several off-system values — `boxShadow: '0 20px 60px
+  // -15px rgba(...)'` is four. Keying dedupe on id|file|line alone threw
+  // 15% of the scanner's output away on a real repo.
+  const merged = mergeFindings([
+    f({ value: 'rgba(38, 64, 139, 0.3)', kind: 'color', nearestToken: '--navy' }),
+    f({ value: 'rgba(0,0,0,0.05)', kind: 'color', nearestToken: null }),
+  ], []);
+  assert.equal(merged.length, 2);
+  assert.deepEqual(merged.map((x) => x.value).sort(), ['rgba(0,0,0,0.05)', 'rgba(38, 64, 139, 0.3)']);
+});
+
+test('mergeFindings still collapses the identical literal reported twice', () => {
+  const row = f({ value: '17px', kind: 'length' });
+  assert.equal(mergeFindings([row, { ...row }], []).length, 1);
+});
+
+test('mergeFindings drops a model row the scanner already measured at that spot', () => {
+  const merged = mergeFindings(
+    [f({ value: '#3b7d4f', kind: 'color', nearestToken: '--primary' })],
+    [f({ source: 'model', evidence: 'hardcoded brand colour' })],
+  );
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].source, 'scanner');
+});

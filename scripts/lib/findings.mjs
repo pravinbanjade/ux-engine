@@ -99,14 +99,26 @@ export function validateModelFindings(rows, modes) {
 
 const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };
 
-const key = (f) => `${f.id}|${f.file}|${f.line ?? 'null'}`;
+// Two rows are the same finding when they name the same mode, the same
+// place *and* the same literal. The value matters: one line commonly holds
+// several off-system values — `boxShadow: '0 20px 60px -15px rgba(...)'` is
+// four — and keying on id|file|line alone silently keeps one of them.
+const key = (f) => `${f.id}|${f.file}|${f.line ?? 'null'}|${f.value ?? ''}`;
+const spot = (f) => `${f.id}|${f.file}|${f.line ?? 'null'}`;
 
 // Scanner first: a collision between a measured literal and a model's
 // judgement about the same line is the same defect seen twice, and the
 // scanner row is the one carrying nearestToken for /ux-restyle to use.
 export function mergeFindings(scannerFindings, modelFindings) {
+  // A model row about a mode the scanner already measured at that spot is
+  // redundant whatever literal the scanner matched, so it is dropped by
+  // place rather than by the key above.
+  const measured = new Set(scannerFindings.map(spot));
   const byKey = new Map();
-  for (const finding of [...modelFindings, ...scannerFindings]) byKey.set(key(finding), finding);
+  for (const finding of modelFindings) {
+    if (!measured.has(spot(finding))) byKey.set(key(finding), finding);
+  }
+  for (const finding of scannerFindings) byKey.set(key(finding), finding);
   return [...byKey.values()];
 }
 
