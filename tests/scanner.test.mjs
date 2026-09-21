@@ -95,6 +95,46 @@ test('findLiterals still reports a plain duration literal', () => {
   assert.deepEqual(findLiterals('transition: 220ms;\n'), [{ line: 1, value: '220ms', kind: 'time' }]);
 });
 
+// CSS reset blocks starting with * are real code, not comments, and can contain
+// off-system values. The isCommentLine function distinguishes them by looking
+// for selector-shaped characters followed by an opening brace.
+test('findLiterals reports a length in a CSS reset block with * selector', () => {
+  const found = findLiterals('* { margin: 0; padding: 17px; }');
+  assert.equal(found.length, 1);
+  assert.deepEqual(found[0], { line: 1, value: '17px', kind: 'length' });
+});
+
+test('findLiterals reports a length in a CSS reset block with multiple selectors', () => {
+  const found = findLiterals('*, *::before { padding: 17px; }');
+  assert.equal(found.length, 1);
+  assert.deepEqual(found[0], { line: 1, value: '17px', kind: 'length' });
+});
+
+// Lines starting with * that are followed by JSDoc syntax (@param, @default, etc.)
+// are still classified as comment lines because the @ character is not a valid
+// CSS selector character.
+test('findLiterals skips a JSDoc @param line even when it mentions a length default', () => {
+  assert.deepEqual(findLiterals(' * @param {number} size - defaults to 16px\n'), []);
+});
+
+test('findLiterals skips a JSDoc @default line mentioning a duration', () => {
+  assert.deepEqual(findLiterals(' * @default 300ms\n'), []);
+});
+
+// Block comment openers are always treated as comment lines regardless of content.
+test('findLiterals skips a JSDoc block comment opener', () => {
+  assert.deepEqual(findLiterals('/** JSDoc opener */\n'), []);
+});
+
+// The rgb()/hsl() colour-function pattern accepts the `none` keyword in CSS,
+// but parseColor does not implement it, so these are silently dropped as an
+// accepted, documented gap (rather than reporting them as findings with no
+// way to evaluate their distance from anything). See the comment in scanner.mjs
+// for the complete list of such gaps.
+test('findLiterals does not report rgb() with CSS none keyword (documented limitation)', () => {
+  assert.deepEqual(findLiterals('background: rgb(none 128 128);\n'), []);
+});
+
 test('nearestToken finds a perceptually close colour', () => {
   const tokens = { '--color-primary': '#2f6f4f' };
   const hit = nearestToken({ value: '#2f6f55', kind: 'color' }, tokens, DEFAULT_THRESHOLDS);

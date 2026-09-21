@@ -56,12 +56,37 @@ const HEX_NOT_AFTER = String.raw`(?![\w-])(?!\s*=)`;
 // Lines that are pure comments never describe an actual value in the code —
 // they're prose *about* one ("Use padding of 16px", "@default 300ms", "see
 // #3b7d4f for reference"). Only the line's own leading punctuation is
-// checked here. A trailing "// ..." comment after real code on the same
-// line is NOT caught by this — doing so correctly would need a real
-// tokenizer to know where a string or regex literal ends and a comment
-// begins, and this scanner deliberately doesn't reach for one. That's a
-// known, accepted gap, not an oversight.
-const COMMENT_LINE = /^(?:\/\/|\/\*|\*\/|\*)/;
+// checked here: a '//', '/*' or '*/' prefix is unconditionally a comment.
+//
+// A bare '*' prefix is different: it's usually a JSDoc/block-comment body
+// line, but CSS also allows a bare universal-selector rule to open with
+// '*' — "* { ... }" or "*, *::before { ... }" are real, scannable CSS, not
+// comments, and a reset block is one of the likeliest places in a codebase
+// for an off-system value to actually be sitting. Silently skipping it
+// would be a worse error than the JSDoc false positive this rule exists to
+// guard against. So a '*'-prefixed line is only treated as a comment when
+// what follows the '*' does NOT look like a selector running into an
+// opening brace — see CSS_STAR_SELECTOR below.
+//
+// See the colour-function pattern further down for the larger set of known
+// same-line comment/code gaps (a trailing comment after code, and the
+// mirror case, a comment opener before code) that this line-level check
+// does not attempt to solve.
+const COMMENT_PREFIX = /^(?:\/\/|\/\*|\*\/)/;
+// '*' followed only by selector-shaped characters (word characters,
+// whitespace, and the punctuation CSS selectors actually use: , . : # [ ]
+// ( ) > + ~ * -) and then an opening brace. Matches "* {" and
+// "*, *::before {"; does not match "* @param {number} size" or
+// "* @default 300ms", because '@' is not a selector character, so JSDoc
+// stays classified as a comment.
+const CSS_STAR_SELECTOR = /^\*[\w\s,.:#[\]()>+~*-]*\{/;
+
+function isCommentLine(raw) {
+  const trimmed = raw.trim();
+  if (COMMENT_PREFIX.test(trimmed)) return true;
+  if (trimmed.startsWith('*')) return !CSS_STAR_SELECTOR.test(trimmed);
+  return false;
+}
 
 const PATTERNS = [
   { kind: 'color', re: new RegExp(`${HEX_NOT_BEFORE}${HEX}${HEX_NOT_AFTER}`, 'g') },
@@ -75,12 +100,39 @@ const PATTERNS = [
     // matches up to the *first* closing paren, so it captures
     // "hsl(scale(d.value)" — missing its outer close), both fail to parse
     // and are correctly dropped instead of reported as a value nobody can
-    // evaluate. Trade-off accepted as part of this: oklab() literals are
-    // matched by the regex for detection purposes, but parseColor does not
-    // implement oklab, so they are now *always* filtered out here and never
-    // reported. That's a known gap, not a regression to chase — reporting
-    // an unresolvable oklab() literal as a "finding" with no way to judge
-    // its distance from anything would itself be a kind of false positive.
+    // evaluate.
+    //
+    // Known, accepted gaps in colour/comment handling — collected here in
+    // one place so a reader who finds one of them sees the whole set,
+    // rather than rediscovering each independently:
+    //   - oklab() is matched by the regex above for detection purposes,
+    //     but parseColor does not implement oklab, so it is *always*
+    //     filtered out by this validate and never reported. Reporting an
+    //     unresolvable oklab() literal as a "finding" with no way to judge
+    //     its distance from anything would itself be a kind of false
+    //     claim.
+    //   - rgb()/hsl() using a CSS `none` component keyword, e.g.
+    //     "rgb(none 128 128)", is the same shape of gap: parseColor does
+    //     not resolve `none`, so these are silently dropped too.
+    //   - lab(), lch(), color() and color-mix() are not matched by this
+    //     pattern at all, in any version of this scanner — the alternation
+    //     above only ever covered rgb/rgba/hsl/hsla/oklch/oklab. A hex
+    //     colour written *inside* a color-mix() call, e.g.
+    //     "color-mix(in srgb, #3b7d4f 50%, white)", is still found and
+    //     reported, because the hex pattern further up scans the whole
+    //     line independently of this one.
+    //   - A trailing "// ..." comment after real code on the same line
+    //     ("padding: 17px; // was 16px") is not distinguished from the
+    //     code before it — both "17px" and "16px" would be scanned as if
+    //     they were both real values. The mirror case also exists: a
+    //     comment *opener* before real code on the same line
+    //     ("/** @type {string} */ const c = '#3b7d4f';") causes the whole
+    //     line to be skipped as a comment by isCommentLine above, missing
+    //     the real "#3b7d4f". Both are consequences of only checking a
+    //     line's own leading punctuation rather than tracking where a
+    //     comment actually starts and ends within a line — doing that
+    //     correctly needs a real tokenizer, which this scanner
+    //     deliberately does not reach for.
     validate: (value) => parseColor(value) !== null,
   },
   { kind: 'length', re: new RegExp(`${NOT_BEFORE}${NUMBER}(?:px|rem|em)${NOT_AFTER}`, 'g') },
@@ -94,7 +146,7 @@ export function findLiterals(text) {
   const out = [];
   text.split('\n').forEach((raw, index) => {
     if (raw.includes('ux-engine-ignore')) return;
-    if (COMMENT_LINE.test(raw.trim())) return;
+    if (isCommentLine(raw)) return;
     // A line that only references tokens is on-system by construction.
     const line = raw.replace(/var\(--[A-Za-z0-9_-]+\)/g, '');
     for (const { kind, re, validate } of PATTERNS) {
