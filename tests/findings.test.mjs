@@ -66,3 +66,73 @@ test('buildEnvelope stamps version, scope and counts', () => {
   assert.equal(envelope.findings.length, 2);
   assert.deepEqual(envelope.skipped, scanOutput.skipped);
 });
+
+import { validateModelFindings } from '../scripts/lib/findings.mjs';
+
+const goodRow = {
+  id: 'UX-046', file: 'src/UserList.tsx', line: 18,
+  evidence: 'renders rows only; no branch for an empty collection',
+  message: 'List has no empty state.',
+};
+
+test('validateModelFindings accepts a well-formed row and stamps mode metadata', () => {
+  const { findings, errors } = validateModelFindings([goodRow], modes);
+  assert.deepEqual(errors, []);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].source, 'model');
+  assert.equal(findings[0].severity, modes.get('UX-046').severity);
+  assert.equal(findings[0].category, modes.get('UX-046').category);
+  assert.equal(findings[0].evidence, goodRow.evidence);
+});
+
+test('validateModelFindings rejects an unknown mode id', () => {
+  const { findings, errors } = validateModelFindings([{ ...goodRow, id: 'UX-999' }], modes);
+  assert.deepEqual(findings, []);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /UX-999/);
+});
+
+test('validateModelFindings rejects a missing or non-string file', () => {
+  assert.equal(validateModelFindings([{ ...goodRow, file: undefined }], modes).errors.length, 1);
+  assert.equal(validateModelFindings([{ ...goodRow, file: 42 }], modes).errors.length, 1);
+});
+
+test('validateModelFindings rejects a non-integer line but allows null', () => {
+  assert.equal(validateModelFindings([{ ...goodRow, line: 'eighteen' }], modes).errors.length, 1);
+  assert.equal(validateModelFindings([{ ...goodRow, line: 0 }], modes).errors.length, 1);
+  assert.deepEqual(validateModelFindings([{ ...goodRow, line: null }], modes).errors, []);
+});
+
+test('validateModelFindings requires evidence', () => {
+  const { errors } = validateModelFindings([{ ...goodRow, evidence: '' }], modes);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /evidence/);
+});
+
+test('validateModelFindings rejects a severity that contradicts the mode', () => {
+  const contradicting = modes.get('UX-046').severity === 'high' ? 'low' : 'high';
+  const { errors } = validateModelFindings([{ ...goodRow, severity: contradicting }], modes);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /severity/);
+});
+
+test('validateModelFindings falls back to the mode title when message is absent', () => {
+  const { findings } = validateModelFindings([{ ...goodRow, message: undefined }], modes);
+  assert.equal(findings[0].message, modes.get('UX-046').title);
+});
+
+test('validateModelFindings rejects a non-array payload wholesale', () => {
+  const { findings, errors } = validateModelFindings({ id: 'UX-046' }, modes);
+  assert.deepEqual(findings, []);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /array/);
+});
+
+test('validateModelFindings reports every bad row, not just the first', () => {
+  const { findings, errors } = validateModelFindings(
+    [{ ...goodRow, id: 'UX-999' }, goodRow, { ...goodRow, file: undefined }],
+    modes,
+  );
+  assert.equal(findings.length, 1);
+  assert.equal(errors.length, 2);
+});
