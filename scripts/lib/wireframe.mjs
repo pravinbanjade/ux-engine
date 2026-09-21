@@ -42,3 +42,121 @@ export function validateIntent(intent, prefix = 'intent') {
   }
   return errors;
 }
+
+export const STATE_KEYS = ['empty', 'loading', 'error', 'populated'];
+
+const MAX_LAYOUT_DEPTH = 6;
+const REVISION_KINDS = new Set(['edit', 'redispatch']);
+
+function layoutErrors(nodes, path, depth, errors) {
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    errors.push(`${path}: must be a non-empty array of regions`);
+    return;
+  }
+  if (depth > MAX_LAYOUT_DEPTH) {
+    errors.push(`${path}: nested deeper than ${MAX_LAYOUT_DEPTH} levels`);
+    return;
+  }
+  for (const [i, node] of nodes.entries()) {
+    const at = `${path}[${i}]`;
+    if (!node || typeof node !== 'object' || Array.isArray(node)) {
+      errors.push(`${at}: must be an object`);
+      continue;
+    }
+    if (typeof node.region !== 'string' || !node.region.trim()) {
+      errors.push(`${at}: region must be a non-empty string`);
+    }
+    // A present `children` must hold something. `{region}` and
+    // `{region, children: []}` mean the same thing, and two spellings of one
+    // concept give the renderer and the diff two shapes to handle for nothing.
+    if (node.children !== undefined) layoutErrors(node.children, `${at}.children`, depth + 1, errors);
+  }
+}
+
+function hierarchyErrors(hierarchy, errors) {
+  if (!Array.isArray(hierarchy) || hierarchy.length === 0) {
+    errors.push('hierarchy: must be a non-empty array');
+    return;
+  }
+  const ranks = [];
+  for (const [i, entry] of hierarchy.entries()) {
+    const at = `hierarchy[${i}]`;
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      errors.push(`${at}: must be an object`);
+      continue;
+    }
+    if (typeof entry.element !== 'string' || !entry.element.trim()) {
+      errors.push(`${at}.element: must be a non-empty string`);
+    }
+    if (!Number.isInteger(entry.rank)) {
+      errors.push(`${at}.rank: must be an integer`);
+      continue;
+    }
+    ranks.push(entry.rank);
+  }
+  // Only worth stating the total-order rule once every rank is a number.
+  if (ranks.length !== hierarchy.length) return;
+  const expected = hierarchy.map((_, i) => i + 1).join(',');
+  if ([...ranks].sort((a, b) => a - b).join(',') !== expected) {
+    // UX-031 asks which element is the entry point. A wireframe with two
+    // rank-1 elements has not answered it; one with a gap lost an element
+    // between stages. Requiring exactly 1..n makes both unrepresentable.
+    errors.push(`hierarchy: ranks must be exactly 1..${hierarchy.length} with no repeats, got ${ranks.join(', ')}`);
+  }
+}
+
+function stateErrors(states, errors) {
+  if (!states || typeof states !== 'object' || Array.isArray(states)) {
+    errors.push('states: must be an object with empty, loading, error and populated');
+    return;
+  }
+  for (const key of STATE_KEYS) {
+    const value = states[key];
+    if (typeof value !== 'string' || !value.trim()) {
+      errors.push(`states.${key}: must describe what the user sees`);
+    }
+  }
+}
+
+function revisionErrors(revisions, errors) {
+  if (revisions === undefined) return;
+  if (!Array.isArray(revisions)) {
+    errors.push('revisions: must be an array when present');
+    return;
+  }
+  for (const [i, r] of revisions.entries()) {
+    const at = `revisions[${i}]`;
+    if (!r || typeof r !== 'object' || Array.isArray(r)) {
+      errors.push(`${at}: must be an object`);
+      continue;
+    }
+    if (typeof r.at !== 'string' || Number.isNaN(Date.parse(r.at))) {
+      errors.push(`${at}.at: must be an ISO 8601 timestamp`);
+    }
+    if (!REVISION_KINDS.has(r.kind)) errors.push(`${at}.kind: must be "edit" or "redispatch"`);
+    if (typeof r.note !== 'string' || !r.note.trim()) {
+      errors.push(`${at}.note: must say what the reviewer asked for`);
+    }
+  }
+}
+
+// Replaced in Task 3.
+function componentErrors() {}
+
+export function validateWireframe(wf, profile, { root } = {}) {
+  if (!wf || typeof wf !== 'object' || Array.isArray(wf)) return ['wireframe must be an object'];
+  const errors = [];
+  if (wf.version !== WIREFRAME_VERSION) {
+    errors.push(`version: must be ${WIREFRAME_VERSION}, got ${JSON.stringify(wf.version)}`);
+  }
+  if (typeof wf.slug !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(wf.slug)) {
+    errors.push('slug: must be lowercase letters, digits and hyphens, starting with a letter or digit');
+  }
+  errors.push(...validateIntent(wf.intent));
+  layoutErrors(wf.layout, 'layout', 1, errors);
+  componentErrors(wf.components, profile, root, errors);
+  hierarchyErrors(wf.hierarchy, errors);
+  stateErrors(wf.states, errors);
+  revisionErrors(wf.revisions, errors);
+  return errors;
+}
