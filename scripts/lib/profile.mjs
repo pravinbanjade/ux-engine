@@ -1,13 +1,24 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { extractCustomProperties, groupTokens, TOKEN_KINDS } from './tokens.mjs';
 import { readManifest, detectStyling, detectComponents, detectConventions } from './detect.mjs';
 
 export const SCHEMA_VERSION = 1;
 
-export function sha256(text) {
-  return createHash('sha256').update(text).digest('hex');
+// True when `candidate` (an absolute path) resolves to `root` itself or
+// somewhere underneath it. A plain `candidate.startsWith(root)` is not
+// enough — it would let "/repo-evil" pass a check against root "/repo" —
+// and a plain string check on the *unresolved* path is defeated outright by
+// a "../" segment, which is exactly the shape a hostile tokenSource entry
+// takes. Comparing resolved paths via `relative` closes both gaps.
+function isWithinRoot(root, candidate) {
+  const rel = relative(root, candidate);
+  return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel));
+}
+
+export function sha256(data) {
+  return createHash('sha256').update(data).digest('hex');
 }
 
 export function scoreConfidence(profile) {
@@ -130,19 +141,44 @@ export function buildProfile(root, { now = new Date().toISOString(), overrides =
 
   // A human-corrected token source takes effect immediately: it changes
   // which files get scanned for tokens and which files this profile
-  // depends on for staleness checks, not just the recorded field.
-  const tokenSource = safeOverrides['styling.tokenSource'] ?? styling.tokenSource;
-
+  // depends on for staleness checks, not just the recorded field. But a
+  // committed profile.json is a pull-request-editable artifact, and
+  // styling.tokenSource is on RESOLVABLE_FIELDS precisely so a human can
+  // correct it — so a hostile or careless entry (an absolute path, a
+  // "../secret.css" escape) must never be read, hashed, or carried into the
+  // profile. Every entry is resolved against `root` and dropped — with a
+  // warning naming it — if it resolves outside the repository, or if it
+  // simply does not exist (a bad hand edit, not an attack, but an ENOENT
+  // that used to crash this loop outright).
+  const resolvedRoot = resolve(root);
+  const tokenSourceCandidates = safeOverrides['styling.tokenSource'] ?? styling.tokenSource;
+  const tokenSource = [];
   let props = {};
-  for (const file of tokenSource) {
-    props = { ...props, ...extractCustomProperties(readFileSync(join(root, file), 'utf8')) };
+  for (const file of tokenSourceCandidates) {
+    const full = resolve(join(root, file));
+    if (!isWithinRoot(resolvedRoot, full)) {
+      console.warn(`ux-engine: refusing styling.tokenSource entry outside the repository root: ${file}`);
+      continue;
+    }
+    if (!existsSync(full)) {
+      console.warn(`ux-engine: skipping styling.tokenSource entry that does not exist: ${file}`);
+      continue;
+    }
+    tokenSource.push(file);
+    props = { ...props, ...extractCustomProperties(readFileSync(full, 'utf8')) };
   }
   const tokens = groupTokens(props);
+
+  // If a human override named styling.tokenSource, what ends up recorded on
+  // the profile must be the same sanitized list used above — an escaping or
+  // missing entry must not survive into the committed profile just because
+  // resolvedByHuman named it.
+  if ('styling.tokenSource' in safeOverrides) safeOverrides['styling.tokenSource'] = tokenSource;
 
   const sourcePaths = ['package.json', 'components.json', ...tokenSource].filter((p) => existsSync(join(root, p)));
   const derivedFrom = [...new Set(sourcePaths)].sort().map((path) => ({
     path,
-    sha256: sha256(readFileSync(join(root, path), 'utf8')),
+    sha256: sha256(readFileSync(join(root, path))),
   }));
 
   const profile = {
@@ -169,10 +205,16 @@ export function buildProfile(root, { now = new Date().toISOString(), overrides =
   return profile;
 }
 
-// Structural validity only — the same shape check-profile.mjs treats as
-// "not a usable profile" (exit 3). Deliberately does not check staleness or
-// schema-version-newer; callers that only need to know whether a file is
-// safe to read fields out of should use this, not re-implement it.
+// The narrow structural check detect-profile.mjs's readExistingProfile uses
+// to decide whether an on-disk profile is trustworthy enough to read
+// `resolvedByHuman` answers out of. Deliberately narrower than
+// validateProfile below: a profile a human is mid-way through hand-editing
+// (or one crafted to smuggle a resolvedByHuman entry) may legitimately lack
+// `styling`/`components`/`tokens`/`conventions` while still needing its
+// `resolvedByHuman` array checked field-by-field against RESOLVABLE_FIELDS
+// — that check happens regardless of what this function returns, so this
+// only guards the two fields the override machinery itself depends on
+// (derivedFrom's shape, and version for the schema check).
 export function isValidProfileShape(profile) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return false;
   if (typeof profile.version !== 'number') return false;
@@ -183,12 +225,70 @@ export function isValidProfileShape(profile) {
   );
 }
 
+// The single shape gate for the three CLIs that treat .ux-engine/profile.json
+// as an input to read fields out of — check-profile.mjs, write-design-doc.mjs
+// and scan-off-system.mjs. Returns null when the profile is complete enough
+// for all three to safely use, or a specific, human-readable defect message
+// otherwise. Each CLI owns its own exit code and remediation text; none of
+// them re-implements what "a usable profile" means.
+//
+// This is stricter than isValidProfileShape on purpose: `{"version":1,
+// "derivedFrom":[]}` passes isValidProfileShape's narrower check (which is
+// all detect-profile.mjs's override bookkeeping needs) but is missing every
+// field write-design-doc.mjs and scan-off-system.mjs actually read, and
+// those CLIs must fail cleanly on it rather than throw.
+export function validateProfile(profile) {
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+    return 'Profile is not a JSON object.';
+  }
+  if (typeof profile.version !== 'number') {
+    return 'Profile is missing or has an invalid "version" field.';
+  }
+  if (!Array.isArray(profile.derivedFrom)) {
+    return 'Profile is missing or has an invalid "derivedFrom" field.';
+  }
+  for (const entry of profile.derivedFrom) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return 'Profile "derivedFrom" entry is not a JSON object.';
+    }
+    if (typeof entry.path !== 'string') {
+      return 'Profile "derivedFrom" entry missing or has invalid "path" field.';
+    }
+    if (typeof entry.sha256 !== 'string') {
+      return 'Profile "derivedFrom" entry missing or has invalid "sha256" field.';
+    }
+  }
+  if (!profile.styling || typeof profile.styling !== 'object' || Array.isArray(profile.styling)
+    || !isStringArray(profile.styling.tokenSource)) {
+    return 'Profile is missing or has an invalid "styling" field.';
+  }
+  if (!profile.components || typeof profile.components !== 'object' || Array.isArray(profile.components)) {
+    return 'Profile is missing or has an invalid "components" field.';
+  }
+  if (!profile.tokens || typeof profile.tokens !== 'object' || Array.isArray(profile.tokens)) {
+    return 'Profile is missing or has an invalid "tokens" field.';
+  }
+  if (!profile.conventions || typeof profile.conventions !== 'object' || Array.isArray(profile.conventions)) {
+    return 'Profile is missing or has an invalid "conventions" field.';
+  }
+  return null;
+}
+
+// derivedFrom is not on RESOLVABLE_FIELDS and detect-profile.mjs refuses any
+// resolvedByHuman entry naming it, but a committed profile.json is still a
+// pull-request-editable file: nothing stops someone hand-crafting a
+// derivedFrom entry whose path escapes the repository. Reading such a path
+// to hash it would be the same fingerprinting oracle Critical 1 closes in
+// buildProfile, so an escaping entry is reported as stale outright — never
+// read — exactly like a deleted source file already is below.
 export function stalePaths(root, profile) {
+  const resolvedRoot = resolve(root);
   return profile.derivedFrom
     .filter(({ path, sha256: recorded }) => {
-      const full = join(root, path);
+      const full = resolve(join(root, path));
+      if (!isWithinRoot(resolvedRoot, full)) return true;
       if (!existsSync(full)) return true;
-      return sha256(readFileSync(full, 'utf8')) !== recorded;
+      return sha256(readFileSync(full)) !== recorded;
     })
     .map(({ path }) => path);
 }

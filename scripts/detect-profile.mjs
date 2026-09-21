@@ -4,8 +4,13 @@ import { dirname, join, resolve } from 'node:path';
 import { buildProfile, isValidProfileShape, getPath, RESOLVABLE_FIELDS } from './lib/profile.mjs';
 
 const args = process.argv.slice(2);
-const root = resolve(args.find((a) => !a.startsWith('--')) ?? '.');
 const outFlag = args.indexOf('--out');
+// The value right after --out (e.g. the "/tmp/x.json" in "--out /tmp/x.json")
+// is that flag's argument, not a positional root — it must be skipped when
+// looking for the root, or "detect-profile.mjs --out /tmp/x.json" silently
+// treats /tmp/x.json as the root instead of defaulting to the cwd.
+const outValueIndex = outFlag === -1 ? -1 : outFlag + 1;
+const root = resolve(args.find((a, i) => i !== outValueIndex && !a.startsWith('--')) ?? '.');
 const out = outFlag === -1 ? join(root, '.ux-engine/profile.json') : resolve(args[outFlag + 1]);
 
 function readExistingProfile(path) {
