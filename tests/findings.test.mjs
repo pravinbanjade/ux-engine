@@ -136,3 +136,53 @@ test('validateModelFindings reports every bad row, not just the first', () => {
   assert.equal(findings.length, 1);
   assert.equal(errors.length, 2);
 });
+
+import { mergeFindings, rankFindings } from '../scripts/lib/findings.mjs';
+
+const f = (over) => ({ id: 'UX-101', source: 'scanner', severity: 'low', category: 'system-consistency', file: 'a.tsx', line: 1, message: 'm', ...over });
+
+test('mergeFindings keeps findings that differ in id, file or line', () => {
+  const merged = mergeFindings([f({})], [f({ source: 'model', id: 'UX-046', severity: 'high' })]);
+  assert.equal(merged.length, 2);
+});
+
+test('mergeFindings dedupes the same id at the same file and line', () => {
+  const merged = mergeFindings([f({})], [f({ source: 'model' })]);
+  assert.equal(merged.length, 1);
+});
+
+test('mergeFindings prefers the scanner row on a collision', () => {
+  const merged = mergeFindings([f({ nearestToken: '--primary' })], [f({ source: 'model', evidence: 'e' })]);
+  assert.equal(merged[0].source, 'scanner');
+  assert.equal(merged[0].nearestToken, '--primary');
+});
+
+test('mergeFindings dedupes within the model list too', () => {
+  const row = f({ source: 'model', id: 'UX-046', severity: 'high' });
+  assert.equal(mergeFindings([], [row, { ...row }]).length, 1);
+});
+
+test('rankFindings orders by severity, then file, then line', () => {
+  const ranked = rankFindings([
+    f({ severity: 'low', file: 'a.tsx', line: 2 }),
+    f({ severity: 'high', file: 'z.tsx', line: 9 }),
+    f({ severity: 'medium', file: 'b.tsx', line: 1 }),
+    f({ severity: 'low', file: 'a.tsx', line: 1 }),
+  ]);
+  assert.deepEqual(
+    ranked.map((x) => [x.severity, x.file, x.line]),
+    [['high', 'z.tsx', 9], ['medium', 'b.tsx', 1], ['low', 'a.tsx', 1], ['low', 'a.tsx', 2]],
+  );
+});
+
+test('rankFindings puts a file-level finding before the first line of the same file', () => {
+  const ranked = rankFindings([f({ line: 1 }), f({ id: 'UX-102', line: null })]);
+  assert.equal(ranked[0].line, null);
+});
+
+test('rankFindings does not mutate its input', () => {
+  const input = [f({ severity: 'low' }), f({ severity: 'high' })];
+  const copy = [...input];
+  rankFindings(input);
+  assert.deepEqual(input, copy);
+});

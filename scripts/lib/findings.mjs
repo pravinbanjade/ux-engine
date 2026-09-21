@@ -96,3 +96,25 @@ export function validateModelFindings(rows, modes) {
 
   return { findings, errors };
 }
+
+const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };
+
+const key = (f) => `${f.id}|${f.file}|${f.line ?? 'null'}`;
+
+// Scanner first: a collision between a measured literal and a model's
+// judgement about the same line is the same defect seen twice, and the
+// scanner row is the one carrying nearestToken for /ux-restyle to use.
+export function mergeFindings(scannerFindings, modelFindings) {
+  const byKey = new Map();
+  for (const finding of [...modelFindings, ...scannerFindings]) byKey.set(key(finding), finding);
+  return [...byKey.values()];
+}
+
+export function rankFindings(findings) {
+  return [...findings].sort((a, b) => {
+    const severity = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
+    if (severity !== 0) return severity;
+    if (a.file !== b.file) return a.file < b.file ? -1 : 1;
+    return (a.line ?? -1) - (b.line ?? -1);
+  });
+}
