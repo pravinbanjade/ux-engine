@@ -182,9 +182,24 @@ test('scanRepo never scans the token source itself', () => {
   assert.deepEqual(findings.filter((f) => f.file === 'src/styles/tokens.css'), []);
 });
 
-test('scanRepo works on a css-in-js repo with no CSS token file', () => {
+test('scanRepo works on a css-in-js repo once its theme is transcribed', () => {
   const root = fixture('styled-components');
-  const { findings } = scanRepo(root, buildProfile(root), {});
+  const profile = buildProfile(root, {
+    overrides: {
+      'styling.tokenSource': ['src/theme.ts'],
+      'styling.tokenSyntax': 'js-object',
+      tokens: {
+        color: { '--color-primary': '#2f6f4f', '--color-surface': '#fbfdfb', '--color-danger': '#b3261e' },
+        spacing: { '--space-2': '8px', '--space-4': '16px', '--space-6': '24px' },
+        radius: { '--radius-md': '8px' },
+        type: {},
+        shadow: {},
+        motion: { '--duration-fast': '150ms', '--duration-slow': '300ms', '--duration-slower': '500ms' },
+        other: {},
+      },
+    },
+  });
+  const { findings } = scanRepo(root, profile, {});
   assert.ok(findings.some((f) => f.file === 'src/components/Offender.tsx'));
 });
 
@@ -198,7 +213,19 @@ test('declaring a JS/TS theme file as the token source excludes it from scanning
   // and it requires no scanner change: the exclusion logic already keys off
   // every entry in profile.styling.tokenSource.
   const profile = buildProfile(root, {
-    overrides: { 'styling.tokenSource': ['src/theme.ts'], 'styling.tokenSyntax': 'js-object' },
+    overrides: {
+      'styling.tokenSource': ['src/theme.ts'],
+      'styling.tokenSyntax': 'js-object',
+      tokens: {
+        color: { '--color-primary': '#2f6f4f', '--color-surface': '#fbfdfb', '--color-danger': '#b3261e' },
+        spacing: { '--space-2': '8px', '--space-4': '16px', '--space-6': '24px' },
+        radius: { '--radius-md': '8px' },
+        type: {},
+        shadow: {},
+        motion: { '--duration-fast': '150ms', '--duration-slow': '300ms', '--duration-slower': '500ms' },
+        other: {},
+      },
+    },
   });
   const { findings } = scanRepo(root, profile, {});
   assert.deepEqual(findings.filter((f) => f.file === 'src/theme.ts'), []);
@@ -238,7 +265,10 @@ test('scanRepo --path requires a path-segment boundary, not just a string prefix
     writeFileSync(join(root, 'src/components/Foo.tsx'), "const p = '17px';\n");
     writeFileSync(join(root, 'src/components-legacy/Bar.tsx'), "const p = '19px';\n");
 
-    const profile = { styling: { tokenSource: [] }, tokens: {} };
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { spacing: { '--s1': '4px', '--s2': '8px', '--s3': '16px' } },
+    };
     const { findings } = scanRepo(root, profile, { path: 'src/components' });
 
     assert.ok(findings.some((f) => f.file === 'src/components/Foo.tsx'));
@@ -306,7 +336,7 @@ test('scanRepo narrows a font-size literal to the type token group', () => {
     writeFileSync(join(root, 'Foo.tsx'), 'const c = "text-[10px]";\n');
     const profile = {
       styling: { tokenSource: [] },
-      tokens: { radius: { '--radius': '10px' }, type: { '--text-sm': '9px' } },
+      tokens: { radius: { '--radius': '10px' }, type: { '--text-sm': '9px', '--text-lg': '40px', '--text-xl': '60px' } },
     };
     const { findings } = scanRepo(root, profile, {});
     const finding = findings.find((f) => f.value === '10px');
@@ -319,7 +349,7 @@ test('scanRepo narrows a border-radius literal to the radius token group', () =>
     writeFileSync(join(root, 'Foo.tsx'), 'const c = "rounded-[10px]";\n');
     const profile = {
       styling: { tokenSource: [] },
-      tokens: { type: { '--text-sm': '10px' }, radius: { '--radius-lg': '9px' } },
+      tokens: { type: { '--text-sm': '10px' }, radius: { '--radius-lg': '9px', '--radius-xl': '40px', '--radius-2xl': '60px' } },
     };
     const { findings } = scanRepo(root, profile, {});
     const finding = findings.find((f) => f.value === '10px');
@@ -332,7 +362,7 @@ test('scanRepo narrows a padding/sizing literal to the spacing token group', () 
     writeFileSync(join(root, 'Foo.tsx'), 'const c = "p-[10px]";\n');
     const profile = {
       styling: { tokenSource: [] },
-      tokens: { radius: { '--radius': '10px' }, spacing: { '--space-3': '9px' } },
+      tokens: { radius: { '--radius': '10px' }, spacing: { '--space-3': '9px', '--space-8': '40px', '--space-12': '60px' } },
     };
     const { findings } = scanRepo(root, profile, {});
     const finding = findings.find((f) => f.value === '10px');
@@ -346,7 +376,7 @@ test('scanRepo narrows a Tailwind v4 "size-" literal to the spacing token group'
     writeFileSync(join(root, 'Foo.tsx'), 'const c = "size-[10px]";\n');
     const profile = {
       styling: { tokenSource: [] },
-      tokens: { radius: { '--radius': '10px' }, spacing: { '--space-3': '9px' } },
+      tokens: { radius: { '--radius': '10px' }, spacing: { '--space-3': '9px', '--space-8': '40px', '--space-12': '60px' } },
     };
     const { findings } = scanRepo(root, profile, {});
     const finding = findings.find((f) => f.value === '10px');
@@ -359,7 +389,7 @@ test('scanRepo narrows a "min-width" property literal to the spacing token group
     writeFileSync(join(root, 'Foo.css'), '.foo { min-width: 10px; }\n');
     const profile = {
       styling: { tokenSource: [] },
-      tokens: { radius: { '--radius': '10px' }, spacing: { '--space-3': '9px' } },
+      tokens: { radius: { '--radius': '10px' }, spacing: { '--space-3': '9px', '--space-8': '40px', '--space-12': '60px' } },
     };
     const { findings } = scanRepo(root, profile, {});
     const finding = findings.find((f) => f.value === '10px');
@@ -375,7 +405,7 @@ test('scanRepo keeps searching all three length groups when the context has no r
     writeFileSync(join(root, 'Foo.tsx'), 'const raw = "value:10px";\n');
     const profile = {
       styling: { tokenSource: [] },
-      tokens: { spacing: { '--space-3': '10px' }, type: { '--text-sm': '11px' } },
+      tokens: { spacing: { '--space-3': '10px' }, type: { '--text-sm': '11px' }, radius: { '--radius': '40px' } },
     };
     const { findings } = scanRepo(root, profile, {});
     const finding = findings.find((f) => f.value === '10px');
@@ -392,7 +422,7 @@ test('scanRepo reports no suggestion when the narrowed group has nothing close, 
     writeFileSync(join(root, 'Foo.tsx'), 'const c = "text-[50px]";\n');
     const profile = {
       styling: { tokenSource: [] },
-      tokens: { type: { '--text-sm': '10px' }, radius: { '--radius': '50px' } },
+      tokens: { type: { '--text-sm': '10px', '--text-md': '12px', '--text-lg': '14px' }, radius: { '--radius': '50px' } },
     };
     const { findings } = scanRepo(root, profile, {});
     const finding = findings.find((f) => f.value === '50px');
@@ -422,7 +452,7 @@ test('scanRepo continues scanning other files when one file has a read error, co
 
     const profile = {
       styling: { tokenSource: [] },
-      tokens: { spacing: { '--space-4': '16px' } },
+      tokens: { spacing: { '--space-4': '16px', '--space-2': '8px', '--space-6': '24px' } },
     };
     const { findings, skipped } = scanRepo(root, profile, {});
 
@@ -487,4 +517,60 @@ test('scanRepo findings carry the column of the literal', () => {
   const source = readFileSync(join(root, 'src/components/Offender.tsx'), 'utf8').split('\n');
   const lineText = source[colour.line - 1];
   assert.equal(lineText.slice(colour.column - 1, colour.column - 1 + colour.value.length), colour.value);
+});
+
+test('a literal whose candidate set is not a scale produces no finding', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-gate-'));
+  try {
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src/Thing.tsx'), "const s = { padding: '17px' };\n");
+    // Two values is a pair, not a scale: nothing to snap 17px to.
+    const profile = { styling: { tokenSource: [] }, tokens: { spacing: { '--a': '8px', '--b': '16px' } } };
+    const { findings, suppressed } = scanRepo(root, profile, {});
+    assert.deepEqual(findings, []);
+    assert.equal(suppressed.length, 1);
+    assert.equal(suppressed[0].id, 'UX-102');
+    assert.equal(suppressed[0].distinctValues, 2);
+    assert.equal(suppressed[0].count, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('suppression is counted once per mode and candidate set, not per literal', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-gate-count-'));
+  try {
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src/A.tsx'), "const a = { padding: '17px' };\n");
+    writeFileSync(join(root, 'src/B.tsx'), "const b = { padding: '19px' };\n");
+    const profile = { styling: { tokenSource: [] }, tokens: { spacing: { '--a': '8px', '--b': '16px' } } };
+    const { suppressed } = scanRepo(root, profile, {});
+    assert.equal(suppressed.length, 1);
+    assert.equal(suppressed[0].count, 2);
+    assert.deepEqual(suppressed[0].groups, ['spacing']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a usable scale is not suppressed', () => {
+  const root = fixture('tailwind-shadcn');
+  const { findings, suppressed } = scanRepo(root, buildProfile(root), {});
+  assert.deepEqual(suppressed, []);
+  assert.deepEqual(
+    findings.filter((f) => f.file === 'src/components/Offender.tsx').map((f) => f.id).sort(),
+    ['UX-101', 'UX-102', 'UX-103'],
+  );
+});
+
+test('a repo whose tokens were never transcribed is suppressed, not silent', () => {
+  // The css-in-js fixture's tokens live in a JS object detection does not
+  // parse, so the profile has none. Reporting every literal as "no near
+  // token" would be noise; reporting nothing at all would be a lie. The
+  // run says which modes it could not apply and to how many literals.
+  const root = fixture('styled-components');
+  const { findings, suppressed } = scanRepo(root, buildProfile(root), {});
+  assert.deepEqual(findings.filter((f) => f.file === 'src/components/Offender.tsx'), []);
+  assert.ok(suppressed.length > 0, 'the run must say why it found nothing');
+  assert.ok(suppressed.every((s) => s.distinctValues === 0));
 });

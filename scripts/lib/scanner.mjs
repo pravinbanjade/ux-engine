@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { walkFiles } from './detect.mjs';
 import { parseColor, deltaE, parseScalar, scalarDistance } from './color.mjs';
+import { isUsableScale } from './tokens.mjs';
 
 export const DEFAULT_THRESHOLDS = { color: 0.10, scalar: 0.15 };
 
@@ -306,6 +307,7 @@ function inScope(file, scope) {
 export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRESHOLDS } = {}) {
   const findings = [];
   const skipped = [];
+  const suppressed = new Map();
   const excluded = new Set(profile.styling.tokenSource ?? []);
 
   for (const file of walkFiles(root, SCAN_EXTENSIONS)) {
@@ -338,6 +340,24 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
           || KIND_TO_GROUPS[literal.kind];
         const candidates = {};
         for (const group of groups) Object.assign(candidates, profile.tokens[group] ?? {});
+        // A mode whose advice is "snap to the nearest step" has nothing to
+        // offer when the candidate set is not a scale. Suppress the finding
+        // and say so once, with a count, rather than emit hundreds of rows
+        // measured against a scale that is not there.
+        if (!isUsableScale(candidates)) {
+          const id = KIND_TO_ID[literal.kind];
+          const tally = suppressed.get(`${id}|${groups.join('|')}`);
+          if (tally) tally.count += 1;
+          else {
+            suppressed.set(`${id}|${groups.join('|')}`, {
+              id,
+              groups: [...groups],
+              distinctValues: new Set(Object.values(candidates)).size,
+              count: 1,
+            });
+          }
+          continue;
+        }
         const hit = nearestToken(literal, candidates, thresholds);
         findings.push({
           id: KIND_TO_ID[literal.kind],
@@ -356,5 +376,5 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
       skipped.push({ file, reason: `parse-error:${errorType}` });
     }
   }
-  return { findings, skipped };
+  return { findings, skipped, suppressed: [...suppressed.values()] };
 }
