@@ -1,6 +1,13 @@
 import { TOKEN_KINDS } from './tokens.mjs';
 
-const PLACEHOLDER = '_None recorded. Add entries here when a deviation is intentional; audits will stop flagging them._';
+// The legend travels with the section so a human editing DESIGN.md learns
+// the format without reading the docs. scripts/lib/exceptions.mjs parses
+// the same shape; prose lines like these two are ignored by it.
+const PLACEHOLDER = [
+  'One per line: `<mode-id or *> | <glob> | <reason>`',
+  '',
+  '_None recorded. Add entries here when a deviation is intentional; audits will stop flagging them._',
+].join('\n');
 
 const LABELS = {
   color: 'Colour', spacing: 'Spacing', radius: 'Radius',

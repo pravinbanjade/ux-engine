@@ -9,7 +9,8 @@ import { buildProfile } from '../scripts/lib/profile.mjs';
 import { renderDesignDoc, extractExceptions, extractUnknownSections } from '../scripts/lib/design-doc.mjs';
 
 const fixture = (n) => fileURLToPath(new URL(`../tests/fixtures/${n}/`, import.meta.url));
-const doc = renderDesignDoc(buildProfile(fixture('tailwind-shadcn'), { now: '2026-01-01T00:00:00.000Z' }));
+const sampleProfile = () => buildProfile(fixture('tailwind-shadcn'), { now: '2026-01-01T00:00:00.000Z' });
+const doc = renderDesignDoc(sampleProfile());
 
 test('renders the four required sections', () => {
   for (const heading of ['## Tokens', '## Components', '## Conventions', '## Deliberate Exceptions']) {
@@ -211,4 +212,18 @@ test('write-design-doc.mjs CLI exits 3 on a structurally invalid profile with a 
   } finally {
     rmSync(tmpDir, { recursive: true });
   }
+});
+
+test('the rendered exceptions placeholder documents the line format', () => {
+  const doc = renderDesignDoc(sampleProfile());
+  assert.match(doc, /One per line: `<mode-id or \*> \| <glob> \| <reason>`/);
+  assert.match(doc, /None recorded/);
+});
+
+test('the rendered exceptions placeholder parses to zero entries and zero warnings', async () => {
+  const { parseExceptions } = await import('../scripts/lib/exceptions.mjs');
+  const { extractExceptions } = await import('../scripts/lib/design-doc.mjs');
+  const parsed = parseExceptions(extractExceptions(renderDesignDoc(sampleProfile())));
+  assert.deepEqual(parsed.entries, []);
+  assert.deepEqual(parsed.warnings, []);
 });
