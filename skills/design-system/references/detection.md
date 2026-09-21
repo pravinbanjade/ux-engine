@@ -51,7 +51,7 @@ Also add the theme file's own path to `styling.tokenSource` (it's an array —
 append to it rather than replacing it if other files are already listed),
 and add `"styling.tokenSource"` and `"styling.tokenSyntax"` to
 `resolvedByHuman` alongside `"tokens"`. This step is not optional bookkeeping:
-the off-system value scanner (Task 12) excludes every file listed in
+the off-system value scanner excludes every file listed in
 `tokenSource` from scanning, on the theory that a token source defines the
 on-system values rather than using them. A JS/TS theme file left out of
 `tokenSource` gets scanned like any other component file, and every literal

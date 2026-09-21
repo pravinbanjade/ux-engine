@@ -21,6 +21,24 @@ const assetFiles = () => {
   return files;
 };
 
+// The stack-agnostic guard below needs a wider frame than assetFiles()
+// above: a hardcoded stack name is just as much a defect in a failure-mode
+// or detection reference doc (skills/*/references/*.md — ~120 of these at
+// full catalog size) as in a SKILL.md or command. Those reference files
+// don't carry `name`/`description` frontmatter, though, so they stay out of
+// assetFiles() itself — the "declares name and description" test above
+// would fail them for a shape they were never meant to have.
+const stackNameCheckFiles = () => {
+  const files = assetFiles();
+  const skillsDir = join(root, 'skills');
+  for (const d of readdirSync(skillsDir)) {
+    const referencesDir = join(skillsDir, d, 'references');
+    if (!existsSync(referencesDir)) continue;
+    for (const f of readdirSync(referencesDir)) if (f.endsWith('.md')) files.push(join(referencesDir, f));
+  }
+  return files;
+};
+
 test('the design-system skill and command exist', () => {
   assert.ok(existsSync(join(root, 'skills/design-system/SKILL.md')));
   assert.ok(existsSync(join(root, 'commands/ux-design-system.md')));
@@ -36,7 +54,7 @@ test('every command and skill declares name and description', () => {
 
 test('no skill or command hardcodes a stack name outside an example', () => {
   const banned = /\b(tailwind|shadcn|styled-components)\b/i;
-  for (const file of assetFiles()) {
+  for (const file of stackNameCheckFiles()) {
     for (const [i, line] of readFileSync(file, 'utf8').split('\n').entries()) {
       if (line.trimStart().startsWith('>') || line.includes('e.g.')) continue;
       assert.ok(!banned.test(line), `${file}:${i + 1} hardcodes a stack: ${line.trim()}`);

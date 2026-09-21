@@ -9,10 +9,9 @@ appliesTo: [any]
 ## Signal
 A style declaration sets a colour using a raw literal — a hex code, an
 `rgb()`/`hsl()`/`oklch()` function call, or a named CSS colour — instead of
-referencing a variable from the project's colour token group
-(`styling.tokenSource`, categorized under `color` by `groupTokens`). The
-scanner flags any colour value in styled code that doesn't resolve back to a
-declared token.
+referencing a variable from the project's colour token group — the `color`
+group of tokens extracted from `styling.tokenSource`. The scanner flags any
+colour value in styled code that doesn't resolve back to a declared token.
 
 ## Why it fails
 A literal colour is invisible to the design system: it doesn't update when

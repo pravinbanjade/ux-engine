@@ -23,8 +23,8 @@ different" effect that a spacing scale exists to eliminate, and each one
 makes the next off-scale value look more normal by precedent.
 
 ## Fix
-Snap the value to the nearest step in the existing spacing scale
-(`components.dir`'s styles, sourced from the spacing token group) rather than
+Snap the value to the nearest step in the existing spacing scale (the
+`spacing` token group, extracted from `styling.tokenSource`) rather than
 tuning a bespoke number — if the layout genuinely needs a gap the scale
 doesn't offer, that's a signal to add a new step to the scale itself, not to
 special-case one component around it.
