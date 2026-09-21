@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 // The wireframe artifact: every rule about its *shape*. Rules about whether an
 // answer is thoughtful or a hierarchy is right belong to skills/ux-design, not
 // here — a validator that graded judgment would be inventing policy.
@@ -140,8 +143,43 @@ function revisionErrors(revisions, errors) {
   }
 }
 
-// Replaced in Task 3.
-function componentErrors() {}
+// `profile` is unused today: the rule that a reused component must live under
+// profile.components.dir was considered and dropped, because reusing a
+// feature-level component outside the primitives directory is legitimate and
+// an error there would push the wireframer to mark real components as new.
+// The parameter stays because it is part of the published signature.
+function componentErrors(components, profile, root, errors) {
+  if (!Array.isArray(components) || components.length === 0) {
+    errors.push('components: must be a non-empty array');
+    return;
+  }
+  const seen = new Set();
+  for (const [i, c] of components.entries()) {
+    const at = `components[${i}]`;
+    if (!c || typeof c !== 'object' || Array.isArray(c)) {
+      errors.push(`${at}: must be an object`);
+      continue;
+    }
+    if (typeof c.name !== 'string' || !c.name.trim()) {
+      errors.push(`${at}.name: must be a non-empty string`);
+    } else if (seen.has(c.name)) {
+      errors.push(`${at}.name: "${c.name}" appears more than once`);
+    } else {
+      seen.add(c.name);
+    }
+    if (typeof c.source !== 'string' || !c.source.trim()) {
+      errors.push(`${at}.source: must be a non-empty string`);
+      continue;
+    }
+    if (typeof c.existing !== 'boolean') {
+      errors.push(`${at}.existing: must be true or false`);
+      continue;
+    }
+    if (c.existing && root && !existsSync(join(root, c.source))) {
+      errors.push(`${at}.source: "${c.source}" is marked existing but no file is there`);
+    }
+  }
+}
 
 export function validateWireframe(wf, profile, { root } = {}) {
   if (!wf || typeof wf !== 'object' || Array.isArray(wf)) return ['wireframe must be an object'];

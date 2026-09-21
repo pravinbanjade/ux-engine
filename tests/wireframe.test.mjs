@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { slugify, validateIntent, validateWireframe, INTENT_KEYS, STATE_KEYS, WIREFRAME_VERSION } from '../scripts/lib/wireframe.mjs';
 
 const GOOD_INTENT = {
@@ -236,4 +239,74 @@ test('a revision must carry a parseable timestamp, a known kind and a note', () 
 
 test('revisions present but not an array is one error', () => {
   assert.deepEqual(check((wf) => { wf.revisions = {}; }), ['revisions: must be an array when present']);
+});
+
+// A throwaway repo holding exactly the one component the golden wireframe
+// claims to reuse.
+const withRepo = (body) => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-wireframe-'));
+  try {
+    mkdirSync(join(root, 'src/components/ui'), { recursive: true });
+    writeFileSync(join(root, 'src/components/ui/data-table.tsx'), 'export const DataTable = () => null;\n');
+    return body(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+};
+
+const PROFILE = { components: { dir: 'src/components/ui' } };
+
+test('the component inventory must be a non-empty array', () => {
+  assert.match(check((wf) => { wf.components = []; })[0], /^components: /);
+  assert.match(check((wf) => { wf.components = 'DataTable'; })[0], /^components: /);
+});
+
+test('every entry needs a name, a source and a boolean existing', () => {
+  assert.deepEqual(check((wf) => { wf.components[0].name = ''; }), ['components[0].name: must be a non-empty string']);
+  assert.deepEqual(check((wf) => { delete wf.components[0].source; }), ['components[0].source: must be a non-empty string']);
+  assert.deepEqual(check((wf) => { wf.components[0].existing = 'yes'; }), ['components[0].existing: must be true or false']);
+});
+
+test('two entries cannot share a name', () => {
+  const errors = check((wf) => { wf.components[1].name = 'DataTable'; });
+  assert.deepEqual(errors, ['components[1].name: "DataTable" appears more than once']);
+});
+
+test('a component marked existing must be on disk when a root is given', () => {
+  withRepo((root) => {
+    const wf = GOOD_WIREFRAME();
+    assert.deepEqual(validateWireframe(wf, PROFILE, { root }), []);
+
+    wf.components[0].source = 'src/components/ui/nope.tsx';
+    assert.deepEqual(validateWireframe(wf, PROFILE, { root }), [
+      'components[0].source: "src/components/ui/nope.tsx" is marked existing but no file is there',
+    ]);
+  });
+});
+
+test('a component marked new is not looked for on disk', () => {
+  withRepo((root) => {
+    const wf = GOOD_WIREFRAME();
+    // components[1] is existing:false and its file does not exist.
+    assert.deepEqual(validateWireframe(wf, PROFILE, { root }), []);
+  });
+});
+
+test('without a root the existence check is skipped, so the rules stay testable off-disk', () => {
+  const wf = GOOD_WIREFRAME();
+  wf.components[0].source = 'src/components/ui/nope.tsx';
+  assert.deepEqual(validateWireframe(wf, PROFILE), []);
+});
+
+test('a reused component outside the primitives directory is accepted', () => {
+  // Reusing a feature-level component is legitimate. An error here would push
+  // the wireframer to mark real components as new, which is the opposite of
+  // what the inventory is for.
+  withRepo((root) => {
+    mkdirSync(join(root, 'src/features/report'), { recursive: true });
+    writeFileSync(join(root, 'src/features/report/row.tsx'), 'export const Row = () => null;\n');
+    const wf = GOOD_WIREFRAME();
+    wf.components.push({ name: 'ReportRow', source: 'src/features/report/row.tsx', existing: true });
+    assert.deepEqual(validateWireframe(wf, PROFILE, { root }), []);
+  });
 });
