@@ -74,3 +74,13 @@ export function groupTokens(props) {
   }
   return grouped;
 }
+
+// Two values are a pair; three are a scale. Below this, a mode whose advice
+// is "snap to the nearest step" has no steps to offer, so reporting the
+// literal is noise and substituting against it is guesswork.
+export const MIN_SCALE_VALUES = 3;
+
+export function isUsableScale(candidates) {
+  if (!candidates) return false;
+  return new Set(Object.values(candidates)).size >= MIN_SCALE_VALUES;
+}

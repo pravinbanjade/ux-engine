@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { extractBlocks, extractCustomProperties, categorizeToken, groupTokens } from '../scripts/lib/tokens.mjs';
+import { extractBlocks, extractCustomProperties, categorizeToken, groupTokens, isUsableScale, MIN_SCALE_VALUES } from '../scripts/lib/tokens.mjs';
 
 const tailwindCss = readFileSync(fileURLToPath(new URL('../tests/fixtures/tailwind-shadcn/src/styles/app.css', import.meta.url)), 'utf8');
 const cssModulesCss = readFileSync(fileURLToPath(new URL('../tests/fixtures/css-modules/src/styles/tokens.css', import.meta.url)), 'utf8');
@@ -90,4 +90,34 @@ test('categorizeToken classifies a colour-valued "text" token as color, not type
 test('categorizeToken still uses the name rule when the value is not a colour', () => {
   assert.equal(categorizeToken('--text-base', '1rem'), 'type');
   assert.equal(categorizeToken('--font-sans', "'Poppins', sans-serif"), 'type');
+});
+
+test('isUsableScale accepts a group with three distinct values', () => {
+  assert.equal(isUsableScale({ '--a': '4px', '--b': '8px', '--c': '16px' }), true);
+});
+
+test('isUsableScale rejects a group with two distinct values', () => {
+  assert.equal(isUsableScale({ '--y-r': '10px', '--y-r-lg': '14px' }), false);
+});
+
+test('isUsableScale rejects an empty group', () => {
+  assert.equal(isUsableScale({}), false);
+});
+
+test('isUsableScale counts distinct values, not names', () => {
+  // Three aliases of one step are one step. A repo that names the same
+  // 1rem three times has no scale to snap anything to.
+  assert.equal(isUsableScale({ '--a': '1rem', '--b': '1rem', '--c': '1rem' }), false);
+});
+
+test('isUsableScale tolerates a null or undefined group', () => {
+  // scanRepo merges `profile.tokens[group] ?? {}`, but a hand-edited
+  // profile can still hand us a null; the gate must answer false rather
+  // than throw mid-scan.
+  assert.equal(isUsableScale(null), false);
+  assert.equal(isUsableScale(undefined), false);
+});
+
+test('MIN_SCALE_VALUES is the documented threshold', () => {
+  assert.equal(MIN_SCALE_VALUES, 3);
 });
