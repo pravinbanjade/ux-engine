@@ -9,8 +9,12 @@ const LABELS = {
 
 function tokenTable(tokens) {
   const rows = Object.entries(tokens).map(([name, value]) => {
-    // Collapse internal whitespace to single spaces and escape pipe and backtick
-    const escaped = value.replace(/\s+/g, ' ').replace(/\|/g, '\\|').replace(/`/g, '\\`');
+    // A hand-transcribed CSS-in-JS token (references/detection.md's
+    // documented path for a JS/TS theme object) may be a number, e.g.
+    // `{"--s": 4}` — String() coerces before .replace() so that documented
+    // happy path renders "4" instead of crashing on a non-string .replace.
+    // Collapse internal whitespace to single spaces and escape pipe and backtick.
+    const escaped = String(value).replace(/\s+/g, ' ').replace(/\|/g, '\\|').replace(/`/g, '\\`');
     return `| ${name} | \`${escaped}\` |`;
   });
   return ['| Token | Value |', '| --- | --- |', ...rows].join('\n');

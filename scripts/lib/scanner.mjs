@@ -102,9 +102,17 @@ const PATTERNS = [
     // and are correctly dropped instead of reported as a value nobody can
     // evaluate.
     //
-    // Known, accepted gaps in colour/comment handling — collected here in
-    // one place so a reader who finds one of them sees the whole set,
+    // Known, accepted gaps in colour/comment/unit handling — collected here
+    // in one place so a reader who finds one of them sees the whole set,
     // rather than rediscovering each independently:
+    //   - z-index, named alongside spacing/radius/font-size/duration in the
+    //     spec's list of what the scanner reports, is deliberately not
+    //     matched at all: a z-index value ("z-index: 20") is a bare
+    //     unitless number, and NUMBER above always requires one of
+    //     px/rem/em (the 'length' pattern) or m?s (the 'time' pattern) to
+    //     follow it. Matching bare numbers would catch far more than
+    //     z-index — array indices, loop bounds, flex-grow, opacity — with
+    //     no way to tell which ones are actually design values.
     //   - oklab() is matched by the regex above for detection purposes,
     //     but parseColor does not implement oklab, so it is *always*
     //     filtered out by this validate and never reported. Reporting an
@@ -232,6 +240,20 @@ function scanLiterals(text) {
       let m;
       while ((m = re.exec(line))) {
         if (validate && !validate(m[0])) continue;
+        // A zero-valued length or duration is on-system in every design
+        // system there is — "margin: 0" needs no token, in any project —
+        // so it is never even reported as a finding, let alone matched
+        // against the nearest token. This is handled here, at the point a
+        // literal is classified, rather than inside scalarDistance's
+        // existing "zero is compatible with any unit" rule: scalarDistance
+        // returning 0 for a zero candidate is what let nearestToken hand
+        // back whichever compatible token happened to be listed first
+        // (e.g. "0px" matching "--spacing-4: 1rem"), a confident wrong
+        // answer that /ux-restyle would have applied mechanically.
+        if (kind === 'length' || kind === 'time') {
+          const scalar = parseScalar(m[0]);
+          if (scalar && scalar.value === 0) continue;
+        }
         const hint = kind === 'length' ? contextHint(line, m.index) : null;
         out.push({ line: index + 1, value: m[0], kind, hint });
       }
@@ -289,21 +311,34 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
       continue;
     }
 
-    for (const literal of scanLiterals(text)) {
-      const groups = (literal.kind === 'length' && literal.hint && HINT_GROUPS[literal.hint])
-        || KIND_TO_GROUPS[literal.kind];
-      const candidates = {};
-      for (const group of groups) Object.assign(candidates, profile.tokens[group] ?? {});
-      const hit = nearestToken(literal, candidates, thresholds);
-      findings.push({
-        id: KIND_TO_ID[literal.kind],
-        file,
-        line: literal.line,
-        value: literal.value,
-        kind: literal.kind,
-        nearestToken: hit?.token ?? null,
-        distance: hit?.distance ?? null,
-      });
+    // The spec's promise — "a parse failure never fails the run" — has to
+    // hold against the *next* parser bug, not just the oklch arity crash
+    // this was written to fix, so the whole per-file literal scan (finding
+    // literals and matching each against the token set) is guarded, not
+    // just the one call site that happened to throw today. A file that
+    // fails partway through contributes no findings at all rather than a
+    // half-scanned mix, matching how a read failure above is handled.
+    const startLength = findings.length;
+    try {
+      for (const literal of scanLiterals(text)) {
+        const groups = (literal.kind === 'length' && literal.hint && HINT_GROUPS[literal.hint])
+          || KIND_TO_GROUPS[literal.kind];
+        const candidates = {};
+        for (const group of groups) Object.assign(candidates, profile.tokens[group] ?? {});
+        const hit = nearestToken(literal, candidates, thresholds);
+        findings.push({
+          id: KIND_TO_ID[literal.kind],
+          file,
+          line: literal.line,
+          value: literal.value,
+          kind: literal.kind,
+          nearestToken: hit?.token ?? null,
+          distance: hit?.distance ?? null,
+        });
+      }
+    } catch {
+      findings.length = startLength;
+      skipped.push({ file, reason: 'parse-error' });
     }
   }
   return { findings, skipped };

@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { scanRepo, DEFAULT_THRESHOLDS } from './lib/scanner.mjs';
+import { validateProfile } from './lib/profile.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -31,6 +32,17 @@ try {
   // a truncated document.
   console.error(USAGE);
   process.exit(1);
+}
+
+// Unlike the checks above (usage errors, exit 1), a profile that parses as
+// JSON but isn't a complete, usable profile is a different kind of failure
+// — the same one write-design-doc.mjs and check-profile.mjs report — so it
+// gets that vocabulary and exit code instead: a clear message on stderr,
+// exit 3, and stdout left empty rather than throwing mid-scan.
+const defect = validateProfile(profile);
+if (defect) {
+  console.error(`${defect} Run /ux-design-system first.`);
+  process.exit(3);
 }
 
 const thresholds = {

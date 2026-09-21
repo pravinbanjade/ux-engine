@@ -83,6 +83,11 @@ export function parseColor(input) {
   const oklch = /^oklch\(([^)]+)\)$/.exec(str);
   if (oklch) {
     const parts = oklch[1].split(/[\s,/]+/).filter(Boolean);
+    // Same arity guard the rgb/hsl branches above already have: without it,
+    // a too-short call like "oklch(0.5)" reads parts[1]/parts[2] as
+    // undefined and throws on `.endsWith` a few lines down instead of
+    // returning null like every other malformed colour value.
+    if (parts.length < 3) return null;
     const L = parts[0].endsWith('%') ? parseFloat(parts[0]) / 100 : parseFloat(parts[0]);
     const chromaStr = parts[1];
     const C = (chromaStr.endsWith('%') ? parseFloat(chromaStr) * 0.004 : parseFloat(chromaStr));
