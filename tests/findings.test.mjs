@@ -267,3 +267,51 @@ test('mergeFindings drops a model row the scanner already measured at that spot'
   assert.equal(merged.length, 1);
   assert.equal(merged[0].source, 'scanner');
 });
+
+test('normalizeScannerFindings carries the column through', () => {
+  const scan = {
+    findings: [{ id: 'UX-101', file: 'src/A.tsx', line: 4, column: 22, value: '#3b7d4f', kind: 'color', nearestToken: '--primary', distance: 0.03 }],
+  };
+  const [finding] = normalizeScannerFindings(scan, modes);
+  assert.equal(finding.column, 22);
+});
+
+test('a scanner row without a column stays valid and simply has none', () => {
+  // A findings file written by an older run is still a findings file. It
+  // is just not auto-fixable, which planSubstitutions decides, not this.
+  const scan = {
+    findings: [{ id: 'UX-101', file: 'src/A.tsx', line: 4, value: '#3b7d4f', kind: 'color', nearestToken: '--primary', distance: 0.03 }],
+  };
+  const [finding] = normalizeScannerFindings(scan, modes);
+  assert.equal(finding.column, undefined);
+  assert.equal(finding.id, 'UX-101');
+});
+
+test('buildEnvelope defaults suppressed to an empty array', () => {
+  const envelope = buildEnvelope({ findings: [], profileHash: 'ab', scope: { kind: 'path', value: '.' } });
+  assert.deepEqual(envelope.suppressed, []);
+});
+
+test('buildEnvelope stamps the suppressions it was given', () => {
+  const suppressed = [{ id: 'UX-102', groups: ['spacing'], distinctValues: 2, count: 775 }];
+  const envelope = buildEnvelope({ findings: [], profileHash: 'ab', scope: { kind: 'path', value: '.' }, suppressed });
+  assert.deepEqual(envelope.suppressed, suppressed);
+});
+
+test('renderReport names each suppression with its count', () => {
+  const envelope = buildEnvelope({
+    findings: [],
+    profileHash: 'ab',
+    scope: { kind: 'path', value: '.' },
+    suppressed: [{ id: 'UX-102', groups: ['spacing', 'radius', 'type'], distinctValues: 2, count: 775 }],
+  });
+  const report = renderReport(envelope, modes);
+  assert.match(report, /## Suppressed/);
+  assert.match(report, /UX-102 suppressed for spacing\|radius\|type — 2 distinct values, not a scale \(775 literals\)/);
+  assert.match(report, /1 suppressed/, 'the summary line carries the count');
+});
+
+test('renderReport omits the suppressed section when there is nothing to say', () => {
+  const envelope = buildEnvelope({ findings: [], profileHash: 'ab', scope: { kind: 'path', value: '.' } });
+  assert.ok(!/## Suppressed/.test(renderReport(envelope, modes)));
+});

@@ -133,6 +133,7 @@ if (scope === 'diff') {
 const envelope = buildEnvelope({
   findings: rankFindings(findings),
   skipped: scanOutput.skipped ?? [],
+  suppressed: scanOutput.suppressed ?? [],
   profileHash: sha256(profileText),
   scope: { kind: scope, value: scopeValue },
   exceptionsApplied,

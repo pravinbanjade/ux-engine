@@ -215,3 +215,29 @@ test('the rendered report matches its committed snapshot', () => {
   assert.equal(stdout, snapshot);
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('the CLI carries the scanner suppressions into the envelope and the report', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ux-engine-suppressed-'));
+  try {
+    const scan = {
+      findings: [],
+      skipped: [],
+      suppressed: [{ id: 'UX-102', groups: ['spacing'], distinctValues: 2, count: 12 }],
+    };
+    writeFileSync(join(dir, 'scan.json'), JSON.stringify(scan));
+    const out = join(dir, 'findings.json');
+    const profileSnapshot = fileURLToPath(new URL('../tests/snapshots/tailwind-shadcn.profile.json', import.meta.url));
+    const result = spawnSync('node', [
+      cli,
+      '--scanner', join(dir, 'scan.json'),
+      '--profile', profileSnapshot,
+      '--root', dir, '--out', out,
+    ], { encoding: 'utf8' });
+
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /UX-102 suppressed for spacing — 2 distinct values, not a scale \(12 literals\)/);
+    assert.deepEqual(JSON.parse(readFileSync(out, 'utf8')).suppressed, scan.suppressed);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

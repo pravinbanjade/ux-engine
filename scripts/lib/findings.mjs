@@ -23,6 +23,7 @@ export function normalizeScannerFindings(scanOutput, modes) {
       category: mode.category,
       file: row.file,
       line: row.line,
+      column: row.column,
       value: row.value,
       kind: row.kind,
       nearestToken: row.nearestToken,
@@ -35,12 +36,13 @@ export function normalizeScannerFindings(scanOutput, modes) {
 export function buildEnvelope({
   findings,
   skipped = [],
+  suppressed = [],
   profileHash,
   scope,
   exceptionsApplied = 0,
   generatedAt = new Date().toISOString(),
 }) {
-  return { version: ENVELOPE_VERSION, generatedAt, profileHash, scope, findings, skipped, exceptionsApplied };
+  return { version: ENVELOPE_VERSION, generatedAt, profileHash, scope, findings, skipped, suppressed, exceptionsApplied };
 }
 // Model findings arrive as JSON the skill wrote. Everything here exists so
 // that a hallucinated mode id, a guessed severity or a missing line never
@@ -146,6 +148,7 @@ export function renderReport(envelope, modes) {
     `${counts.high} high · ${counts.medium} medium · ${counts.low} low`,
   ];
   if (envelope.exceptionsApplied) summary.push(`${envelope.exceptionsApplied} exceptions applied`);
+  if (envelope.suppressed?.length) summary.push(`${envelope.suppressed.length} suppressed`);
   if (envelope.skipped.length) summary.push(`${envelope.skipped.length} skipped`);
 
   const out = ['# UX findings', '', summary.join(' · '), ''];
@@ -163,6 +166,19 @@ export function renderReport(envelope, modes) {
       if (finding.evidence) out.push(`  - Evidence: ${finding.evidence}`);
       const fix = modes.get(finding.id)?.fix;
       if (fix) out.push(`  - Fix: ${fix}`);
+    }
+    out.push('');
+  }
+
+  // A suppression is a fact about the design system, not about a file, so
+  // it gets its own section rather than a line per literal. The summary
+  // above carries the count; this says which modes and why. The optional
+  // chaining matters: an envelope written before this existed has no
+  // `suppressed` key, and reading a v1 file must not throw.
+  if (envelope.suppressed?.length) {
+    out.push('## Suppressed', '');
+    for (const s of envelope.suppressed) {
+      out.push(`- ${s.id} suppressed for ${s.groups.join('|')} — ${s.distinctValues} distinct values, not a scale (${s.count} literals)`);
     }
     out.push('');
   }
