@@ -47,3 +47,16 @@ test('the plugin ships the restyle command', () => {
   const readme = readFileSync(join(root, 'README.md'), 'utf8');
   assert.match(readme, /\/ux-restyle/);
 });
+
+test('the plugin ships the design command', () => {
+  // A command file with no entry in the README is a command nobody finds.
+  const readme = readFileSync(join(root, 'README.md'), 'utf8');
+  assert.match(readme, /\/ux-design\b/);
+});
+
+test('the README documents the wireframe artifact', () => {
+  // It is the only thing /ux-design writes that the user did not ask for by
+  // name, so it belongs in the table of what lands in their repo.
+  const readme = readFileSync(join(root, 'README.md'), 'utf8');
+  assert.match(readme, /\.ux-engine\/wireframes\//);
+});
