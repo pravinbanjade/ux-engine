@@ -468,3 +468,77 @@ test('a blank note is not a note', () => {
     assert.deepEqual(collectRevisionNotes(dir), []);
   });
 });
+
+// Found by the design dogfood: a real repository imports components through a
+// module alias and without a file extension, so every reused component failed
+// the existence check. Resolving the path is part of implementing the rule
+// faithfully, not a new rule — and tsconfig's `paths` is where the mapping is
+// declared, so nothing has to be guessed.
+const withAliasedRepo = (body, { tsconfig } = {}) => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-alias-'));
+  try {
+    mkdirSync(join(root, 'src/components/ui'), { recursive: true });
+    writeFileSync(join(root, 'src/components/ui/card.tsx'), 'export const Card = () => null;\n');
+    mkdirSync(join(root, 'src/components/chart'), { recursive: true });
+    writeFileSync(join(root, 'src/components/chart/index.ts'), 'export const Chart = () => null;\n');
+    if (tsconfig !== null) {
+      writeFileSync(join(root, 'tsconfig.json'), tsconfig ?? JSON.stringify({ compilerOptions: { paths: { '@/*': ['./src/*'] } } }));
+    }
+    return body(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+};
+
+const oneComponent = (source) => {
+  const wf = GOOD_WIREFRAME();
+  wf.components = [{ name: 'Card', source, existing: true }];
+  return wf;
+};
+
+test('a module-alias source is resolved through tsconfig paths', () => {
+  withAliasedRepo((root) => {
+    assert.deepEqual(validateWireframe(oneComponent('@/components/ui/card'), PROFILE, { root }), []);
+  });
+});
+
+test('a repo-relative source without an extension resolves', () => {
+  withAliasedRepo((root) => {
+    assert.deepEqual(validateWireframe(oneComponent('src/components/ui/card'), PROFILE, { root }), []);
+  });
+});
+
+test('a directory with an index file resolves', () => {
+  withAliasedRepo((root) => {
+    assert.deepEqual(validateWireframe(oneComponent('@/components/chart'), PROFILE, { root }), []);
+  });
+});
+
+test('a bare directory with no index file is not a component', () => {
+  withAliasedRepo((root) => {
+    const errors = validateWireframe(oneComponent('@/components/ui'), PROFILE, { root });
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /no file is there/);
+  });
+});
+
+test('a path that resolves to nothing is still an error', () => {
+  withAliasedRepo((root) => {
+    const errors = validateWireframe(oneComponent('@/components/ui/gone'), PROFILE, { root });
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /no file is there/);
+  });
+});
+
+test('a repo with no tsconfig still resolves repo-relative paths', () => {
+  withAliasedRepo((root) => {
+    assert.deepEqual(validateWireframe(oneComponent('src/components/ui/card.tsx'), PROFILE, { root }), []);
+    assert.equal(validateWireframe(oneComponent('@/components/ui/card'), PROFILE, { root }).length, 1);
+  }, { tsconfig: null });
+});
+
+test('an unparseable tsconfig is skipped rather than throwing', () => {
+  withAliasedRepo((root) => {
+    assert.deepEqual(validateWireframe(oneComponent('src/components/ui/card.tsx'), PROFILE, { root }), []);
+  }, { tsconfig: '{ not json' });
+});

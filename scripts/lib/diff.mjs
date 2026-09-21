@@ -36,6 +36,25 @@ export function changedRanges({ base = 'HEAD', cwd = process.cwd() } = {}) {
     current.ranges.push(count === 0 ? { start, end: start } : { start, end: start + count - 1 });
   }
 
+  // `git diff` never lists an untracked file, so a file that was just created
+  // has no hunks and would fall out of scope entirely. That is exactly the
+  // case /ux-design produces: it writes a new screen and then asks for a
+  // report scoped to the diff. A new file is changed from its first line to
+  // its last, and Infinity says so without reading every untracked file in
+  // the tree just to learn where each one ends. `--exclude-standard` honours
+  // .gitignore, so build output stays out. A staged new file is already in
+  // the diff above and is not an "other", so nothing is counted twice.
+  const untracked = execFileSync(
+    'git',
+    ['ls-files', '--others', '--exclude-standard', '-z'],
+    { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+  )
+    .split('\0')
+    .filter(Boolean);
+  for (const file of untracked) {
+    files.push({ file, ranges: [{ start: 1, end: Infinity }] });
+  }
+
   return files.filter((f) => f.ranges.length > 0);
 }
 

@@ -65,6 +65,11 @@ Copy the intent block through unchanged. Set `existing: true` only for a file
 that is actually on disk — the caller checks, and a wrong path fails
 validation and costs a whole round trip.
 
+Write `source` the way the codebase writes it. A repo-relative path is always
+accepted; a module alias the project declares in its TypeScript config is
+resolved too, and the file extension is optional. Prefer whatever the
+surrounding imports use, so the inventory reads like the code it describes.
+
 ## What not to do
 
 - Do not write or edit any file. You have no tools that can.

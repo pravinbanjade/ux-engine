@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 // The wireframe artifact: every rule about its *shape*. Rules about whether an
@@ -143,6 +143,54 @@ function revisionErrors(revisions, errors) {
   }
 }
 
+// How a codebase actually writes an import path. Found by the design dogfood:
+// a real repository imports every reused component as `@/components/ui/card`
+// — a module alias, no extension — so a literal existsSync reported every one
+// of them missing. Resolving the path is part of implementing the rule
+// honestly, not a new rule on top of it.
+const SOURCE_SUFFIXES = [
+  '', '.tsx', '.ts', '.jsx', '.js',
+  '/index.tsx', '/index.ts', '/index.jsx', '/index.js',
+];
+
+const isFile = (path) => {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+};
+
+// tsconfig's `compilerOptions.paths` is where a project declares its aliases,
+// so nothing here is guessed. Only the ordinary `prefix/*` -> `target/*` shape
+// is handled; anything else, or an unreadable tsconfig, simply yields no
+// aliases and the path is tried as written.
+function aliasMap(root) {
+  let config;
+  try {
+    config = JSON.parse(readFileSync(join(root, 'tsconfig.json'), 'utf8'));
+  } catch {
+    return [];
+  }
+  const paths = config?.compilerOptions?.paths;
+  if (!paths || typeof paths !== 'object') return [];
+  return Object.entries(paths).flatMap(([from, targets]) => {
+    if (!from.endsWith('/*') || !Array.isArray(targets)) return [];
+    const prefix = from.slice(0, -1);
+    return targets
+      .filter((t) => typeof t === 'string' && t.endsWith('/*'))
+      .map((t) => ({ prefix, target: t.slice(0, -1).replace(/^\.\//, '') }));
+  });
+}
+
+function componentExists(root, source, aliases) {
+  const candidates = [source];
+  for (const { prefix, target } of aliases) {
+    if (source.startsWith(prefix)) candidates.push(target + source.slice(prefix.length));
+  }
+  return candidates.some((c) => SOURCE_SUFFIXES.some((suffix) => isFile(join(root, c + suffix))));
+}
+
 // `profile` is unused today: the rule that a reused component must live under
 // profile.components.dir was considered and dropped, because reusing a
 // feature-level component outside the primitives directory is legitimate and
@@ -154,6 +202,7 @@ function componentErrors(components, profile, root, errors) {
     return;
   }
   const seen = new Set();
+  const aliases = root ? aliasMap(root) : [];
   for (const [i, c] of components.entries()) {
     const at = `components[${i}]`;
     if (!c || typeof c !== 'object' || Array.isArray(c)) {
@@ -175,7 +224,7 @@ function componentErrors(components, profile, root, errors) {
       errors.push(`${at}.existing: must be true or false`);
       continue;
     }
-    if (c.existing && root && !existsSync(join(root, c.source))) {
+    if (c.existing && root && !componentExists(root, c.source, aliases)) {
       errors.push(`${at}.source: "${c.source}" is marked existing but no file is there`);
     }
   }

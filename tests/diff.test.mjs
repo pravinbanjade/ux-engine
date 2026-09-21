@@ -117,3 +117,48 @@ test('inScope honours a custom margin', () => {
   assert.equal(inScope({ file: 'src/a.tsx', line: 11 }, changed, 0), true);
   assert.equal(inScope({ file: 'src/a.tsx', line: 9 }, changed, 0), false);
 });
+
+// Found by the design dogfood. /ux-design writes new files and then scopes its
+// report to the diff — but `git diff HEAD` never lists an untracked file, so
+// every finding in generated code was silently dropped and the report read
+// "0 high". /ux-review had the same hole for any newly added file.
+test('an untracked file is in scope from its first line', () => {
+  const dir = repo({ 'a.txt': lines(10) });
+  writeFileSync(join(dir, 'new.tsx'), lines(3));
+  const changed = changedRanges({ cwd: dir });
+  assert.deepEqual(changed.map((c) => c.file), ['new.tsx']);
+  for (const line of [1, 2, 3, 500]) {
+    assert.ok(inScope({ file: 'new.tsx', line }, changed), `line ${line} should be in scope`);
+  }
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('an untracked file and a tracked edit are both reported', () => {
+  const dir = repo({ 'a.txt': lines(10) });
+  writeFileSync(join(dir, 'a.txt'), lines(10).replace('line 4', 'CHANGED'));
+  writeFileSync(join(dir, 'new.tsx'), lines(3));
+  const changed = changedRanges({ cwd: dir });
+  assert.deepEqual(changed.map((c) => c.file).sort(), ['a.txt', 'new.tsx']);
+  assert.ok(inScope({ file: 'a.txt', line: 4 }, changed));
+  assert.ok(!inScope({ file: 'a.txt', line: 9 }, changed), 'the tracked file is still scoped to its hunks');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('an ignored file is not in scope', () => {
+  // .gitignore is the user saying this is not their code. A build artifact
+  // full of literals would otherwise bury the findings that matter.
+  const dir = repo({ 'a.txt': lines(10), '.gitignore': 'dist/\n' });
+  mkdirSync(join(dir, 'dist'), { recursive: true });
+  writeFileSync(join(dir, 'dist/bundle.js'), lines(3));
+  assert.deepEqual(changedRanges({ cwd: dir }), []);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('a staged new file is reported once, not twice', () => {
+  const dir = repo({ 'a.txt': lines(10) });
+  writeFileSync(join(dir, 'new.tsx'), lines(3));
+  git(dir, 'add', 'new.tsx');
+  const changed = changedRanges({ cwd: dir });
+  assert.deepEqual(changed.filter((c) => c.file === 'new.tsx').length, 1);
+  rmSync(dir, { recursive: true, force: true });
+});
