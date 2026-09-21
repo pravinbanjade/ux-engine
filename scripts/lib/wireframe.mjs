@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // The wireframe artifact: every rule about its *shape*. Rules about whether an
@@ -254,4 +254,69 @@ export function renderWireframe(wf) {
   }
 
   return `${out.join('\n').trimEnd()}\n`;
+}
+
+// Flatten to leaf values keyed by a dotted path, so a diff names the smallest
+// thing that actually changed rather than "states differ".
+const leaves = (value, path, out) => {
+  if (Array.isArray(value)) {
+    value.forEach((v, i) => leaves(v, `${path}[${i}]`, out));
+  } else if (value && typeof value === 'object') {
+    for (const key of Object.keys(value).sort()) {
+      leaves(value[key], path ? `${path}.${key}` : key, out);
+    }
+  } else {
+    out.set(path, value);
+  }
+};
+
+const byPath = (a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+
+export function diffWireframes(prev, next) {
+  const before = new Map();
+  const after = new Map();
+  leaves(prev ?? {}, '', before);
+  leaves(next ?? {}, '', after);
+
+  const added = [];
+  const changed = [];
+  const removed = [];
+  for (const [path, value] of after) {
+    if (!before.has(path)) added.push({ path, after: value });
+    else if (before.get(path) !== value) changed.push({ path, before: before.get(path), after: value });
+  }
+  for (const [path, value] of before) {
+    if (!after.has(path)) removed.push({ path, before: value });
+  }
+  return { added: added.sort(byPath), removed: removed.sort(byPath), changed: changed.sort(byPath) };
+}
+
+// Every correction this repository's reviewer has made, newest first. Stage 2
+// hands these to the wireframer so a draft that keeps getting the same thing
+// wrong gets it wrong once rather than once per run.
+export function collectRevisionNotes(dir, { limit = 20, exclude } = {}) {
+  let files;
+  try {
+    files = readdirSync(dir).filter((f) => f.endsWith('.json'));
+  } catch {
+    return [];
+  }
+  const rows = [];
+  for (const file of files) {
+    let wf;
+    try {
+      wf = JSON.parse(readFileSync(join(dir, file), 'utf8'));
+    } catch {
+      // One broken artifact from an interrupted run must not block a new one.
+      continue;
+    }
+    if (!wf || typeof wf !== 'object' || !Array.isArray(wf.revisions)) continue;
+    if (exclude !== undefined && wf.slug === exclude) continue;
+    for (const r of wf.revisions) {
+      if (!r || typeof r.note !== 'string' || !r.note.trim()) continue;
+      rows.push({ at: typeof r.at === 'string' ? r.at : '', note: r.note.trim() });
+    }
+  }
+  rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  return rows.slice(0, limit).map((r) => r.note);
 }

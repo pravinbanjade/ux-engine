@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { slugify, validateIntent, validateWireframe, renderWireframe, INTENT_KEYS, STATE_KEYS, WIREFRAME_VERSION } from '../scripts/lib/wireframe.mjs';
+import { slugify, validateIntent, validateWireframe, renderWireframe, diffWireframes, collectRevisionNotes, INTENT_KEYS, STATE_KEYS, WIREFRAME_VERSION } from '../scripts/lib/wireframe.mjs';
 
 const GOOD_INTENT = {
   who: 'Risk analysts who already know the portfolio names',
@@ -346,4 +346,125 @@ test('a wireframe that reuses nothing still renders both inventory lists', () =>
   wf.components = wf.components.filter((c) => !c.existing);
   const out = renderWireframe(wf);
   assert.match(out, /Reused:\n- _none_/);
+});
+
+test('an identical wireframe diffs to nothing', () => {
+  const { added, removed, changed } = diffWireframes(golden(), golden());
+  assert.deepEqual({ added, removed, changed }, { added: [], removed: [], changed: [] });
+});
+
+test('a changed leaf is reported by its dotted path with both values', () => {
+  const next = golden();
+  next.states.empty = 'Nothing here yet';
+  const { added, removed, changed } = diffWireframes(golden(), next);
+  assert.deepEqual(added, []);
+  assert.deepEqual(removed, []);
+  assert.equal(changed.length, 1);
+  assert.equal(changed[0].path, 'states.empty');
+  assert.equal(changed[0].after, 'Nothing here yet');
+  assert.match(changed[0].before, /^No reports yet/);
+});
+
+test('an array element is addressed by index', () => {
+  const next = golden();
+  next.hierarchy[1].element = 'Results table';
+  const { changed } = diffWireframes(golden(), next);
+  assert.deepEqual(changed.map((c) => c.path), ['hierarchy[1].element']);
+});
+
+test('a new leaf is added and a dropped one is removed', () => {
+  const next = golden();
+  next.components.pop();
+  const { added, removed } = diffWireframes(golden(), next);
+  assert.deepEqual(added, []);
+  assert.deepEqual(removed.map((r) => r.path).sort(), [
+    'components[2].existing', 'components[2].name', 'components[2].source',
+  ]);
+});
+
+test('each list is sorted by path so two runs read the same', () => {
+  const next = golden();
+  next.slug = 'risk-report-table';
+  next.states.error = 'It broke';
+  const { changed } = diffWireframes(golden(), next);
+  assert.deepEqual(changed.map((c) => c.path), ['slug', 'states.error']);
+});
+
+// collectRevisionNotes
+
+const withWireframeDir = (files, body) => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-revisions-'));
+  try {
+    const dir = join(root, 'wireframes');
+    mkdirSync(dir, { recursive: true });
+    for (const [name, contents] of Object.entries(files)) {
+      writeFileSync(join(dir, name), typeof contents === 'string' ? contents : JSON.stringify(contents));
+    }
+    return body(dir);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+};
+
+const wireframeWith = (slug, revisions) => ({ slug, revisions });
+
+test('notes come back newest first across every file', () => {
+  withWireframeDir({
+    'a.json': wireframeWith('a', [{ at: '2026-09-01T00:00:00.000Z', kind: 'edit', note: 'oldest' }]),
+    'b.json': wireframeWith('b', [
+      { at: '2026-09-20T00:00:00.000Z', kind: 'redispatch', note: 'newest' },
+      { at: '2026-09-10T00:00:00.000Z', kind: 'edit', note: 'middle' },
+    ]),
+  }, (dir) => {
+    assert.deepEqual(collectRevisionNotes(dir), ['newest', 'middle', 'oldest']);
+  });
+});
+
+test('limit caps the list', () => {
+  withWireframeDir({
+    'a.json': wireframeWith('a', [
+      { at: '2026-09-03T00:00:00.000Z', kind: 'edit', note: 'three' },
+      { at: '2026-09-02T00:00:00.000Z', kind: 'edit', note: 'two' },
+      { at: '2026-09-01T00:00:00.000Z', kind: 'edit', note: 'one' },
+    ]),
+  }, (dir) => {
+    assert.deepEqual(collectRevisionNotes(dir, { limit: 2 }), ['three', 'two']);
+  });
+});
+
+test('exclude drops the wireframe being revised right now', () => {
+  withWireframeDir({
+    'a.json': wireframeWith('a', [{ at: '2026-09-01T00:00:00.000Z', kind: 'edit', note: 'from a' }]),
+    'b.json': wireframeWith('b', [{ at: '2026-09-02T00:00:00.000Z', kind: 'edit', note: 'from b' }]),
+  }, (dir) => {
+    assert.deepEqual(collectRevisionNotes(dir, { exclude: 'b' }), ['from a']);
+  });
+});
+
+test('a corrupt file is skipped rather than throwing', () => {
+  // An interrupted earlier run must not block a new one.
+  withWireframeDir({
+    'broken.json': '{ not json',
+    'good.json': wireframeWith('good', [{ at: '2026-09-01T00:00:00.000Z', kind: 'edit', note: 'survived' }]),
+  }, (dir) => {
+    assert.deepEqual(collectRevisionNotes(dir), ['survived']);
+  });
+});
+
+test('a wireframe with no revisions contributes nothing', () => {
+  withWireframeDir({ 'a.json': { slug: 'a' } }, (dir) => {
+    assert.deepEqual(collectRevisionNotes(dir), []);
+  });
+});
+
+test('a missing directory is an empty list, not a crash', () => {
+  assert.deepEqual(collectRevisionNotes(join(tmpdir(), 'ux-engine-does-not-exist')), []);
+});
+
+test('a blank note is not a note', () => {
+  withWireframeDir({
+    'a.json': wireframeWith('a', [{ at: '2026-09-01T00:00:00.000Z', kind: 'edit', note: '   ' }]),
+  }, (dir) => {
+    assert.deepEqual(collectRevisionNotes(dir), []);
+  });
 });
