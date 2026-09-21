@@ -8,7 +8,7 @@
     },
     {
       "path": "src/styles/tokens.css",
-      "sha256": "e616a4abf7258ba3adbc04d7dcb4ce3471aab63d11a7093e7d1f60aa81f8a21a"
+      "sha256": "c53400e1de5dfc31a776c275053693c3b3de906ee4ff05494dc5a253402d482c"
     }
   ],
   "styling": {
@@ -31,11 +31,13 @@
   "tokens": {
     "color": {
       "--color-primary": "#2f6f4f",
-      "--color-surface": "#fbfdfb"
+      "--color-surface": "#fbfdfb",
+      "--color-danger": "#b3261e"
     },
     "spacing": {
       "--space-2": "8px",
-      "--space-4": "16px"
+      "--space-4": "16px",
+      "--space-6": "24px"
     },
     "radius": {
       "--radius-md": "8px"
@@ -43,7 +45,9 @@
     "type": {},
     "shadow": {},
     "motion": {
-      "--duration-fast": "150ms"
+      "--duration-fast": "150ms",
+      "--duration-slow": "300ms",
+      "--duration-slower": "500ms"
     },
     "other": {}
   },

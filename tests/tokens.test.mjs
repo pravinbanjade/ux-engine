@@ -25,7 +25,7 @@ test('extractCustomProperties reads values verbatim', () => {
   const props = extractCustomProperties(tailwindCss);
   assert.equal(props['--color-primary'], 'oklch(0.55 0.15 150)');
   assert.equal(props['--duration-fast'], '150ms');
-  assert.equal(Object.keys(props).length, 9);
+  assert.equal(Object.keys(props).length, 11);
 });
 
 test('categorizeToken uses the name first', () => {
@@ -45,9 +45,9 @@ test('categorizeToken falls back to the value shape', () => {
 
 test('groupTokens buckets every property', () => {
   const grouped = groupTokens(extractCustomProperties(cssModulesCss));
-  assert.deepEqual(Object.keys(grouped.color), ['--color-primary', '--color-surface']);
-  assert.deepEqual(Object.keys(grouped.spacing), ['--space-2', '--space-4']);
-  assert.deepEqual(Object.keys(grouped.motion), ['--duration-fast']);
+  assert.deepEqual(Object.keys(grouped.color), ['--color-primary', '--color-surface', '--color-danger']);
+  assert.deepEqual(Object.keys(grouped.spacing), ['--space-2', '--space-4', '--space-6']);
+  assert.deepEqual(Object.keys(grouped.motion), ['--duration-fast', '--duration-slow', '--duration-slower']);
 });
 
 test('extractCustomProperties captures final declaration without trailing semicolon', () => {

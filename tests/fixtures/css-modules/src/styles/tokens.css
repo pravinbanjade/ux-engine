@@ -1,8 +1,12 @@
 :root {
   --color-primary: #2f6f4f;
   --color-surface: #fbfdfb;
+  --color-danger: #b3261e;
   --space-2: 8px;
   --space-4: 16px;
+  --space-6: 24px;
   --radius-md: 8px;
   --duration-fast: 150ms;
+  --duration-slow: 300ms;
+  --duration-slower: 500ms;
 }

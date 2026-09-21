@@ -12,7 +12,7 @@
     },
     {
       "path": "src/styles/app.css",
-      "sha256": "68f1c539e9ba8ef672eadec6d47f7053d22ce75d45a98e452fc3ab9c2e5d1c14"
+      "sha256": "3b2248b7b2909b115f6ca3134d3be872e61ceedd6b139ba9709eab0357015213"
     }
   ],
   "styling": {
@@ -49,7 +49,9 @@
     },
     "shadow": {},
     "motion": {
-      "--duration-fast": "150ms"
+      "--duration-fast": "150ms",
+      "--duration-slow": "300ms",
+      "--duration-slower": "500ms"
     },
     "other": {}
   },

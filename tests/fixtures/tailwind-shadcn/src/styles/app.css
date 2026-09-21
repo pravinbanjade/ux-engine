@@ -10,4 +10,6 @@
   --radius-md: 0.5rem;
   --text-base: 1rem;
   --duration-fast: 150ms;
+  --duration-slow: 300ms;
+  --duration-slower: 500ms;
 }
