@@ -149,3 +149,25 @@ test('checkIndex requires ID-sorted order', () => {
   const errors = checkIndex([{ filename: 'a.md', data: a }, { filename: 'b.md', data: b }], idx);
   assert.ok(errors.some((e) => /sorted/.test(e)));
 });
+
+import { modeIndex } from '../scripts/lib/library.mjs';
+import { fileURLToPath } from 'node:url';
+
+const modesDir = fileURLToPath(new URL('../skills/failure-modes/references/', import.meta.url));
+
+test('modeIndex maps every mode id to its metadata', () => {
+  const index = modeIndex(modesDir);
+  assert.equal(index.size, 22);
+  const mode = index.get('UX-101');
+  assert.equal(mode.id, 'UX-101');
+  assert.equal(mode.category, 'system-consistency');
+  assert.ok(['high', 'medium', 'low'].includes(mode.severity));
+  assert.ok(mode.title.length > 0);
+  assert.ok(mode.fix.length > 0, 'fix line is the first line of the ## Fix section');
+});
+
+test('modeIndex fix line excludes the heading itself', () => {
+  for (const mode of modeIndex(modesDir).values()) {
+    assert.ok(!mode.fix.startsWith('#'), `${mode.id}: fix line must not be a heading`);
+  }
+});

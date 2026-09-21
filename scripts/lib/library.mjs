@@ -124,3 +124,31 @@ export function loadModes(dir) {
       return { filename, text, data, body };
     });
 }
+
+// Findings carry a mode id; reports and validation need the mode's own
+// severity, category and fix line. Reading them here, once, keeps a
+// finding from ever disagreeing with the mode it names.
+function firstFixLine(body) {
+  const section = /^## Fix\n([\s\S]*?)(?=\n## |$)/m.exec(body);
+  if (!section) return '';
+  for (const line of section[1].split('\n')) {
+    const text = line.trim();
+    if (text && !text.startsWith('#')) return text;
+  }
+  return '';
+}
+
+export function modeIndex(dir) {
+  const index = new Map();
+  for (const { data, body } of loadModes(dir)) {
+    index.set(data.id, {
+      id: data.id,
+      title: data.title,
+      category: data.category,
+      severity: data.severity,
+      detection: data.detection,
+      fix: firstFixLine(body),
+    });
+  }
+  return index;
+}
