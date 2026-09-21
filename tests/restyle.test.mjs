@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { substitutionFor, planSubstitutions } from '../scripts/lib/restyle.mjs';
+import { substitutionFor, planSubstitutions, applyEdits } from '../scripts/lib/restyle.mjs';
 
 const at = (lineText, value, token) => substitutionFor({
   lineText,
@@ -151,5 +151,77 @@ test('two identical literals on one line plan two distinct edits', () => {
     const { edits } = planSubstitutions(envelope, { root });
     assert.equal(edits.length, 2);
     assert.notEqual(edits[0].column, edits[1].column);
+  });
+});
+
+test('applyEdits replaces a literal in place', () => {
+  const line = "const s = { color: '#3b7d4f' };";
+  withRepo({ 'src/A.tsx': `${line}\n` }, (root) => {
+    const edits = [{ id: 'UX-101', file: 'src/A.tsx', line: 1, column: line.indexOf('#3b7d4f') + 1, value: '#3b7d4f', token: '--color-primary', replacement: 'var(--color-primary)' }];
+    const summary = applyEdits(edits, { root });
+    assert.equal(summary.applied, 1);
+    assert.deepEqual(summary.failed, []);
+    assert.equal(readFileSync(join(root, 'src/A.tsx'), 'utf8'), "const s = { color: 'var(--color-primary)' };\n");
+  });
+});
+
+test('two edits on one line both land, longest replacement first', () => {
+  // Applied left-to-right the second column would be 13 characters stale.
+  const line = "const s = { padding: '17px', margin: '17px' };";
+  withRepo({ 'src/A.tsx': `${line}\n` }, (root) => {
+    const edits = [
+      { id: 'UX-102', file: 'src/A.tsx', line: 1, column: line.indexOf('17px') + 1, value: '17px', token: '--spacing-4', replacement: 'var(--spacing-4)' },
+      { id: 'UX-102', file: 'src/A.tsx', line: 1, column: line.lastIndexOf('17px') + 1, value: '17px', token: '--spacing-4', replacement: 'var(--spacing-4)' },
+    ];
+    applyEdits(edits, { root });
+    assert.equal(
+      readFileSync(join(root, 'src/A.tsx'), 'utf8'),
+      "const s = { padding: 'var(--spacing-4)', margin: 'var(--spacing-4)' };\n",
+    );
+  });
+});
+
+test('dryRun writes nothing but reports the same summary', () => {
+  const line = "const s = { color: '#3b7d4f' };";
+  withRepo({ 'src/A.tsx': `${line}\n` }, (root) => {
+    const edits = [{ id: 'UX-101', file: 'src/A.tsx', line: 1, column: line.indexOf('#3b7d4f') + 1, value: '#3b7d4f', token: '--color-primary', replacement: 'var(--color-primary)' }];
+    const summary = applyEdits(edits, { root, dryRun: true });
+    assert.equal(summary.applied, 1);
+    assert.equal(readFileSync(join(root, 'src/A.tsx'), 'utf8'), `${line}\n`);
+  });
+});
+
+test('a multi-file plan reports one entry per file', () => {
+  const a = "const s = { color: '#3b7d4f' };";
+  const b = "const t = { padding: '17px' };";
+  withRepo({ 'src/A.tsx': `${a}\n`, 'src/B.tsx': `${b}\n` }, (root) => {
+    const summary = applyEdits([
+      { id: 'UX-101', file: 'src/A.tsx', line: 1, column: a.indexOf('#3b7d4f') + 1, value: '#3b7d4f', token: '--color-primary', replacement: 'var(--color-primary)' },
+      { id: 'UX-102', file: 'src/B.tsx', line: 1, column: b.indexOf('17px') + 1, value: '17px', token: '--spacing-4', replacement: 'var(--spacing-4)' },
+    ], { root });
+    assert.equal(summary.applied, 2);
+    assert.deepEqual(summary.files.map((f) => f.file).sort(), ['src/A.tsx', 'src/B.tsx']);
+  });
+});
+
+test('a file that cannot be read is named and the rest still apply', () => {
+  const b = "const t = { padding: '17px' };";
+  withRepo({ 'src/B.tsx': `${b}\n` }, (root) => {
+    const summary = applyEdits([
+      { id: 'UX-101', file: 'src/Missing.tsx', line: 1, column: 1, value: '#3b7d4f', token: '--color-primary', replacement: 'var(--color-primary)' },
+      { id: 'UX-102', file: 'src/B.tsx', line: 1, column: b.indexOf('17px') + 1, value: '17px', token: '--spacing-4', replacement: 'var(--spacing-4)' },
+    ], { root });
+    assert.equal(summary.applied, 1);
+    assert.equal(summary.failed.length, 1);
+    assert.equal(summary.failed[0].file, 'src/Missing.tsx');
+    assert.match(readFileSync(join(root, 'src/B.tsx'), 'utf8'), /var\(--spacing-4\)/);
+  });
+});
+
+test('a file with no trailing newline keeps not having one', () => {
+  const line = "const s = { color: '#3b7d4f' };";
+  withRepo({ 'src/A.tsx': line }, (root) => {
+    applyEdits([{ id: 'UX-101', file: 'src/A.tsx', line: 1, column: line.indexOf('#3b7d4f') + 1, value: '#3b7d4f', token: '--color-primary', replacement: 'var(--color-primary)' }], { root });
+    assert.equal(readFileSync(join(root, 'src/A.tsx'), 'utf8'), "const s = { color: 'var(--color-primary)' };");
   });
 });

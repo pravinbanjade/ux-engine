@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // A utility class's arbitrary value — bg-[#3b7d4f], p-[17px] — is the one
@@ -91,4 +91,48 @@ export function planSubstitutions(envelope, { root }) {
   }
 
   return { edits, manual, judgment };
+}
+
+export function applyEdits(edits, { root, dryRun = false }) {
+  const byFile = new Map();
+  for (const edit of edits) {
+    if (!byFile.has(edit.file)) byFile.set(edit.file, []);
+    byFile.get(edit.file).push(edit);
+  }
+
+  const files = [];
+  const failed = [];
+
+  for (const [file, list] of byFile) {
+    let lines;
+    try {
+      // split('\n') then join('\n') is lossless, so a file without a
+      // trailing newline does not silently acquire one.
+      lines = readFileSync(join(root, file), 'utf8').split('\n');
+    } catch (error) {
+      failed.push({ file, reason: error.code ?? 'read-error' });
+      continue;
+    }
+
+    // Rightmost first: every column is an offset into the line as it is
+    // now, and a replacement is longer than the literal it replaces.
+    const ordered = [...list].sort((a, b) => (b.line - a.line) || (b.column - a.column));
+    for (const edit of ordered) {
+      const i = edit.line - 1;
+      const at = edit.column - 1;
+      lines[i] = lines[i].slice(0, at) + edit.replacement + lines[i].slice(at + edit.value.length);
+    }
+
+    if (!dryRun) {
+      try {
+        writeFileSync(join(root, file), lines.join('\n'));
+      } catch (error) {
+        failed.push({ file, reason: error.code ?? 'write-error' });
+        continue;
+      }
+    }
+    files.push({ file, edits: list.length });
+  }
+
+  return { files, failed, applied: files.reduce((n, f) => n + f.edits, 0) };
 }
