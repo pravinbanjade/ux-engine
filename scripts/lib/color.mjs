@@ -15,7 +15,17 @@ function linearRgbToOklab(r, g, b) {
   };
 }
 
-const fromRgb255 = (r, g, b) => linearRgbToOklab(srgbToLinear(r / 255), srgbToLinear(g / 255), srgbToLinear(b / 255));
+const fromRgb255 = (r, g, b, alpha = 1) => ({
+  ...linearRgbToOklab(srgbToLinear(r / 255), srgbToLinear(g / 255), srgbToLinear(b / 255)),
+  alpha,
+});
+
+// A component that may be a number 0-1 or a percentage. Absent means opaque.
+const parseAlpha = (str) => {
+  if (str === undefined) return 1;
+  const value = str.endsWith('%') ? parseFloat(str) / 100 : parseFloat(str);
+  return Number.isNaN(value) ? 1 : value;
+};
 
 // Parse a component that may be a number or a percentage of 255.
 const parseRgbComponent = (str) => {
@@ -43,7 +53,8 @@ export function parseColor(input) {
     let h = hex[1];
     if (h.length === 3 || h.length === 4) h = [...h].map((c) => c + c).join('');
     if (h.length !== 6 && h.length !== 8) return null;
-    return fromRgb255(parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16));
+    const alpha = h.length === 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1;
+    return fromRgb255(parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), alpha);
   }
 
   const rgb = /^rgba?\(([^)]+)\)$/.exec(str);
@@ -54,7 +65,7 @@ export function parseColor(input) {
     const g = parseRgbComponent(parts[1]);
     const b = parseRgbComponent(parts[2]);
     if ([r, g, b].some(Number.isNaN)) return null;
-    return fromRgb255(r, g, b);
+    return fromRgb255(r, g, b, parseAlpha(parts[3]));
   }
 
   const hsl = /^hsla?\(([^)]+)\)$/.exec(str);
@@ -65,6 +76,7 @@ export function parseColor(input) {
     const s = parts[1].endsWith('%') ? parseFloat(parts[1]) / 100 : parseFloat(parts[1]);
     const l = parts[2].endsWith('%') ? parseFloat(parts[2]) / 100 : parseFloat(parts[2]);
     if ([h, s, l].some(Number.isNaN)) return null;
+    const alpha = parseAlpha(parts[3]);
     // HSL to RGB conversion
     const c = (1 - Math.abs(2 * l - 1)) * s;
     const hh = h % 360;
@@ -77,7 +89,7 @@ export function parseColor(input) {
     else if (hh < 240) [r255, g255, b255] = [0, x, c];
     else if (hh < 300) [r255, g255, b255] = [x, 0, c];
     else [r255, g255, b255] = [c, 0, x];
-    return fromRgb255((r255 + m) * 255, (g255 + m) * 255, (b255 + m) * 255);
+    return fromRgb255((r255 + m) * 255, (g255 + m) * 255, (b255 + m) * 255, alpha);
   }
 
   const oklch = /^oklch\(([^)]+)\)$/.exec(str);
@@ -94,7 +106,7 @@ export function parseColor(input) {
     const hDeg = parseHue(parts[2]);
     const H = (hDeg * Math.PI) / 180;
     if ([L, C, H].some(Number.isNaN)) return null;
-    return { L, a: C * Math.cos(H), b: C * Math.sin(H) };
+    return { L, a: C * Math.cos(H), b: C * Math.sin(H), alpha: parseAlpha(parts[3]) };
   }
 
   return null;
@@ -102,6 +114,12 @@ export function parseColor(input) {
 
 export function deltaE(c1, c2) {
   if (!c1 || !c2) return Infinity;
+  // Two colours that differ in opacity are different colours, not near
+  // ones: found by the restyle dogfood, which planned
+  // rgba(255,255,255,0.08) -> var(--background) and would have turned a
+  // translucent glass panel into a solid white block. Comparing only the
+  // OKLab coordinates made that substitution look like a perfect match.
+  if ((c1.alpha ?? 1) !== (c2.alpha ?? 1)) return Infinity;
   return Math.hypot(c1.L - c2.L, c1.a - c2.a, c1.b - c2.b);
 }
 

@@ -175,3 +175,24 @@ test('scalarDistance handles negative candidate against positive reference', () 
   // This represents a 50% difference
   assert.ok(Math.abs(scalarDistance(parseScalar('-10px'), parseScalar('-20px')) - 0.5) < 1e-9);
 });
+
+test('parseColor carries the alpha channel', () => {
+  assert.equal(parseColor('#ffffff').alpha, 1);
+  assert.equal(parseColor('rgba(255, 255, 255, 0.08)').alpha, 0.08);
+  assert.equal(parseColor('rgba(38, 64, 139, 0.5)').alpha, 0.5);
+  assert.equal(parseColor('#26408b80').alpha, 128 / 255);
+  assert.equal(parseColor('hsla(0, 0%, 100%, 0.5)').alpha, 0.5);
+});
+
+test('deltaE refuses to compare colours of different opacity', () => {
+  // Found by the restyle dogfood: rgba(255,255,255,0.08) matched
+  // --background (opaque white) at distance 0, so a translucent glass
+  // panel would have been substituted with a solid white block. Two
+  // colours that differ only in alpha are not near each other — they are
+  // different colours, and one cannot stand in for the other.
+  const translucent = parseColor('rgba(255, 255, 255, 0.08)');
+  const opaque = parseColor('#ffffff');
+  assert.equal(deltaE(translucent, opaque), Infinity);
+  assert.equal(deltaE(opaque, opaque), 0);
+  assert.equal(deltaE(translucent, parseColor('rgba(255, 255, 255, 0.08)')), 0);
+});

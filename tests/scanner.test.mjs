@@ -574,3 +574,92 @@ test('a repo whose tokens were never transcribed is suppressed, not silent', () 
   assert.ok(suppressed.length > 0, 'the run must say why it found nothing');
   assert.ok(suppressed.every((s) => s.distinctValues === 0));
 });
+
+test('a translucent literal never matches an opaque token', () => {
+  // The restyle dogfood planned rgba(255,255,255,0.08) -> var(--background)
+  // and rgba(38,64,139,0.5) -> var(--navy). Both drop the alpha and turn a
+  // translucent surface opaque. There is no near token here; saying so is
+  // the correct answer.
+  const tokens = { '--background': '#ffffff', '--navy': '#26408B', '--dark': '#0F172B' };
+  assert.equal(nearestToken({ value: 'rgba(255, 255, 255, 0.08)', kind: 'color' }, tokens, DEFAULT_THRESHOLDS), null);
+  assert.equal(nearestToken({ value: 'rgba(38, 64, 139, 0.5)', kind: 'color' }, tokens, DEFAULT_THRESHOLDS), null);
+  // An opaque literal still matches an opaque token.
+  assert.equal(nearestToken({ value: '#fffffe', kind: 'color' }, tokens, DEFAULT_THRESHOLDS).token, '--background');
+});
+
+test('every value in a shorthand declaration keeps the property hint', () => {
+  // Found by the restyle dogfood: `padding: 6px 16px` gave the second
+  // value no hint, so it was matched against every length group at once
+  // and picked a radius token — the restyle then wrote a 14px radius step
+  // into a 16px padding. A shorthand's later values are still that
+  // property's values.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-shorthand-'));
+  try {
+    writeFileSync(join(root, 'a.css'), '.a { padding: 6px 16px; }\n');
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: {
+        // The radius token is an exact match and the spacing token is not,
+        // so an unhinted literal would pick radius. Only the hint can put
+        // this on the spacing scale.
+        spacing: { '--s1': '4px', '--s2': '17px', '--s3': '32px' },
+        radius: { '--r1': '16px', '--r2': '20px', '--r3': '28px' },
+      },
+    };
+    const { findings } = scanRepo(root, profile, {});
+    const second = findings.find((f) => f.value === '16px');
+    assert.equal(second.nearestToken, '--s2');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a property hint does not leak across a declaration boundary', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-hint-leak-'));
+  try {
+    writeFileSync(join(root, 'a.css'), '.a { padding: 4px; border-radius: 16px; }\n');
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: {
+        spacing: { '--s1': '4px', '--s2': '16px', '--s3': '32px' },
+        radius: { '--r1': '17px', '--r2': '20px', '--r3': '28px' },
+      },
+    };
+    const { findings } = scanRepo(root, profile, {});
+    const radius = findings.find((f) => f.value === '16px');
+    assert.equal(radius.nearestToken, '--r1', 'border-radius must not inherit the padding hint');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('directional spacing longhands carry the spacing hint', () => {
+  // Found by the restyle dogfood: only `margin` and `padding` were listed,
+  // so `margin-bottom: 12px` went unhinted, fell back to every length
+  // group at once and was matched to a border-radius token. A longhand is
+  // the same property.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-longhand-'));
+  try {
+    writeFileSync(join(root, 'a.css'), [
+      '.a { margin-bottom: 16px; }',
+      '.b { padding-top: 16px; }',
+      '.c { margin-inline-start: 16px; }',
+      '.d { top: 16px; }',
+      '',
+    ].join('\n'));
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: {
+        spacing: { '--s1': '4px', '--s2': '17px', '--s3': '32px' },
+        radius: { '--r1': '16px', '--r2': '20px', '--r3': '28px' },
+      },
+    };
+    const { findings } = scanRepo(root, profile, {});
+    assert.equal(findings.length, 4);
+    for (const finding of findings) {
+      assert.equal(finding.nearestToken, '--s2', `${finding.file} took a radius token`);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

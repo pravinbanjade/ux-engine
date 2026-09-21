@@ -95,6 +95,9 @@ process.stdout.write(`\nApplied ${summary.applied} substitution(s) across ${summ
 // 8. Verify. A fixer that reports success while leaving the literal in place
 // is worse than one that fails, so the claim is measured, not assumed.
 if (summary.applied) {
+  // Keyed on file|line|value, not column: a fresh scan of the rewritten
+  // file reports different columns, so a column-keyed set would never
+  // match anything and the check would pass vacuously.
   const applied = new Set(
     plan.edits
       .filter((e) => summary.files.some((f) => f.file === e.file))
@@ -103,9 +106,9 @@ if (summary.applied) {
   const { findings } = scanRepo(root, profile, {});
   const remaining = findings.filter((f) => applied.has(`${f.file}|${f.line}|${f.value}`));
   if (remaining.length) {
-    console.error(`Verification failed: ${remaining.length} of ${applied.size} substituted literal(s) are still present.`);
+    console.error(`Verification failed: ${remaining.length} substituted literal(s) are still present out of ${summary.applied} applied.`);
     for (const f of remaining.slice(0, 10)) console.error(`  ${f.file}:${f.line} ${f.value}`);
     process.exit(6);
   }
-  process.stdout.write(`Verified: all ${applied.size} substituted literal(s) are gone from a fresh scan.\n`);
+  process.stdout.write(`Verified: all ${summary.applied} substituted literal(s) are gone from a fresh scan.\n`);
 }

@@ -101,11 +101,15 @@ export function validateModelFindings(rows, modes) {
 
 const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };
 
-// Two rows are the same finding when they name the same mode, the same
-// place *and* the same literal. The value matters: one line commonly holds
-// several off-system values — `boxShadow: '0 20px 60px -15px rgba(...)'` is
-// four — and keying on id|file|line alone silently keeps one of them.
-const key = (f) => `${f.id}|${f.file}|${f.line ?? 'null'}|${f.value ?? ''}`;
+// Two rows are the same finding when they name the same mode and the same
+// exact place. The value matters: one line commonly holds several
+// off-system values — `boxShadow: '0 20px 60px -15px rgba(...)'` is four —
+// and keying on id|file|line alone silently keeps one of them. The column
+// matters for the same reason one step further in: `0 10px 10px -5px`
+// holds the *same* value twice, and without the column the fixer repairs
+// one of them and leaves the other. Found by the restyle dogfood, where
+// post-apply verification caught the survivor.
+const key = (f) => `${f.id}|${f.file}|${f.line ?? 'null'}|${f.column ?? 'null'}|${f.value ?? ''}`;
 const spot = (f) => `${f.id}|${f.file}|${f.line ?? 'null'}`;
 
 // Scanner first: a collision between a measured literal and a model's

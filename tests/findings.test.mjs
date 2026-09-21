@@ -315,3 +315,25 @@ test('renderReport omits the suppressed section when there is nothing to say', (
   const envelope = buildEnvelope({ findings: [], profileHash: 'ab', scope: { kind: 'path', value: '.' } });
   assert.ok(!/## Suppressed/.test(renderReport(envelope, modes)));
 });
+
+test('two identical literals at different columns on one line are both kept', () => {
+  // Found by the restyle dogfood: `box-shadow: 0 10px 10px -5px rgba(...)`
+  // produced two UX-102 rows that the dedupe key collapsed into one, so
+  // the fixer repaired the second and left the first, and verification
+  // rightly failed. Now that a scanner row carries its column, the key has
+  // to include it — the same value in two places is two findings.
+  const a = {
+    id: 'UX-102', source: 'scanner', severity: 'medium', category: 'system-consistency',
+    file: 'src/styles/a.css', line: 70, column: 52, value: '10px', message: 'm',
+  };
+  const b = { ...a, column: 57 };
+  assert.equal(mergeFindings([a, b], []).length, 2);
+});
+
+test('the same literal at the same column is still one finding', () => {
+  const a = {
+    id: 'UX-102', source: 'scanner', severity: 'medium', category: 'system-consistency',
+    file: 'src/styles/a.css', line: 70, column: 52, value: '10px', message: 'm',
+  };
+  assert.equal(mergeFindings([a, { ...a }], []).length, 1);
+});

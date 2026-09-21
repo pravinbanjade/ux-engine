@@ -189,9 +189,18 @@ function bracketHintRe(prefixes) {
 // CSS/JS property names precede a value with a colon, in kebab or camel
 // case ("font-size: 16px", "fontSize: 12", "padding: '17px'"), optionally
 // followed by an opening quote before the value.
+//
+// A shorthand's later values are still that property's values: in
+// "padding: 6px 16px" the 16px is a padding, not an unclassified length.
+// SHORTHAND_VALUE therefore lets already-passed scalars and the handful of
+// bare keywords that appear in a value list sit between the colon and the
+// match. It deliberately admits nothing else — no ";", "{", "}" or "," —
+// so the hint cannot leak from one declaration into the next.
+const SHORTHAND_VALUE = String.raw`(?:[+-]?(?:\d+\.\d+|\.\d+|\d+)(?:px|rem|em|%)?|auto|solid|dashed|dotted|inset)\s+`;
+
 function propertyHintRe(properties) {
   const alt = properties.map(escapeForRegex).join('|');
-  return new RegExp(`${HINT_BOUNDARY}(?:${alt})\\s*:\\s*['"\`]?$`, 'i');
+  return new RegExp(`${HINT_BOUNDARY}(?:${alt})\\s*:\\s*['"\`]?(?:${SHORTHAND_VALUE})*$`, 'i');
 }
 
 const HINT_MATCHERS = [
@@ -210,9 +219,22 @@ const HINT_MATCHERS = [
       'gap', 'space', 'w', 'h', 'size', 'min-w', 'max-w', 'min-h', 'max-h',
       'top', 'left', 'right', 'bottom', 'inset', 'translate',
     ]),
+    // The longhands matter as much as the shorthands: `margin-bottom` left
+    // out of this list is a length with no hint, matched against every
+    // group at once, and the restyle dogfood duly wrote a border-radius
+    // token into a margin.
     propertyHintRe([
-      'padding', 'margin', 'width', 'height', 'gap',
-      'min-width', 'max-width', 'min-height', 'max-height',
+      'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+      'padding-block', 'padding-inline', 'padding-block-start', 'padding-block-end',
+      'padding-inline-start', 'padding-inline-end',
+      'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+      'margin-block', 'margin-inline', 'margin-block-start', 'margin-block-end',
+      'margin-inline-start', 'margin-inline-end',
+      'width', 'height', 'min-width', 'max-width', 'min-height', 'max-height',
+      'inline-size', 'block-size', 'min-inline-size', 'max-inline-size',
+      'min-block-size', 'max-block-size',
+      'gap', 'row-gap', 'column-gap', 'grid-gap',
+      'inset', 'inset-block', 'inset-inline', 'top', 'right', 'bottom', 'left',
     ]),
   ]],
 ];
