@@ -101,6 +101,13 @@ UX-100 | accessibility | medium | hybrid | Motion applied without checking the r
 UX-101 | system-consistency | high | scanner | Hard-coded colour literal bypasses the token system
 UX-102 | system-consistency | medium | scanner | Hard-coded spacing value bypasses the spacing scale
 UX-103 | system-consistency | low | scanner | Hard-coded animation duration bypasses the motion tokens
+UX-104 | system-consistency | medium | model | One concept rendered by two components with different affordances
+UX-105 | system-consistency | medium | model | A primitive rebuilt instead of composed
+UX-106 | system-consistency | medium | model | A call site styles its way to a variant the component could declare
+UX-107 | system-consistency | medium | model | The same quantity formatted differently on different screens
+UX-108 | system-consistency | low | model | One action represented by different glyphs in different places
+UX-109 | system-consistency | medium | model | One operation called by different words on different screens
+UX-110 | system-consistency | low | model | A screen composes its own page structure instead of the shared one
 UX-111 | conformance | high | conformance | Approved state has no branch in the implementation
 UX-112 | conformance | medium | conformance | Implementation contradicts the approved hierarchy
 UX-113 | conformance | low | conformance | Component used that was not in the approved inventory
