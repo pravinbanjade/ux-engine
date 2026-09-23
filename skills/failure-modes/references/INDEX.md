@@ -14,6 +14,20 @@ UX-013 | information-architecture | medium | model | A drill-down screen renders
 UX-014 | interaction | high | model | Destructive action weighted equally with its safe sibling
 UX-015 | interaction | high | model | Irreversible action ships with no undo and no confirmation
 UX-016 | interaction | medium | hybrid | Interactive target smaller than the minimum tap/click size
+UX-017 | interaction | medium | model | Only the label is clickable inside a row that reads as one target
+UX-018 | interaction | medium | model | The control does not acknowledge the press
+UX-019 | interaction | high | model | Submitting twice sends the request twice
+UX-020 | interaction | high | model | Item actions exist only while the pointer is over the item
+UX-021 | interaction | medium | model | Order can only be changed by dragging
+UX-022 | interaction | medium | model | The dialog covers the data its own question depends on
+UX-023 | interaction | low | model | A reversible action is gated behind a confirmation
+UX-024 | interaction | medium | model | Content advances on a timer the user cannot stop
+UX-025 | interaction | high | model | Focus falls to the document after the focused element is removed
+UX-026 | interaction | high | model | Dismissing the overlay discards typed input without asking
+UX-027 | interaction | medium | model | Bulk selection never says how much is selected
+UX-028 | interaction | medium | model | An inline edit never says whether it saved
+UX-029 | interaction | medium | model | Navigation built as a button, or mutation built as a link
+UX-030 | interaction | medium | model | The action names the verb but not what it acts on
 UX-031 | visual-hierarchy | medium | model | No single element reads as the entry point
 UX-032 | visual-hierarchy | medium | model | Identical spacing between related and unrelated elements
 UX-046 | state-coverage | high | model | List or table has no design for zero results
