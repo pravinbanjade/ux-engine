@@ -90,6 +90,14 @@ UX-089 | data-display | high | model | The total is computed over a different se
 UX-090 | data-display | medium | model | Only the elapsed interval is shown where the exact moment matters
 UX-091 | accessibility | high | hybrid | Icon-only button with no accessible name
 UX-092 | accessibility | high | model | Colour is the only signal distinguishing meaning
+UX-093 | accessibility | high | hybrid | A generic container given a click handler and nothing else
+UX-094 | accessibility | high | hybrid | The focus outline removed and not replaced
+UX-095 | accessibility | medium | model | Heading levels chosen for their size rather than the structure
+UX-096 | accessibility | high | model | The field's label is only positional
+UX-097 | accessibility | high | model | A graphic carries information and has no text alternative
+UX-098 | accessibility | high | model | The overlay opens without taking, holding or returning focus
+UX-099 | accessibility | medium | model | Content changes with nothing announcing the change
+UX-100 | accessibility | medium | hybrid | Motion applied without checking the reduced-motion preference
 UX-101 | system-consistency | high | scanner | Hard-coded colour literal bypasses the token system
 UX-102 | system-consistency | medium | scanner | Hard-coded spacing value bypasses the spacing scale
 UX-103 | system-consistency | low | scanner | Hard-coded animation duration bypasses the motion tokens
