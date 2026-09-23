@@ -1,6 +1,16 @@
 UX-001 | information-architecture | high | model | Every data field rendered as its own table column
 UX-002 | information-architecture | high | model | The primary action lives inside an overflow menu
 UX-003 | information-architecture | medium | model | Search collapsed behind an icon with no visible input
+UX-004 | information-architecture | high | model | The task the product exists for sits three levels down
+UX-005 | information-architecture | medium | model | The screen never says which screen it is
+UX-006 | information-architecture | medium | model | Sections grouped by backing system rather than by user question
+UX-007 | information-architecture | medium | model | Filters offered for fields nobody narrows by
+UX-008 | information-architecture | medium | model | Pagination fights the task the screen exists for
+UX-009 | information-architecture | medium | model | One task requires two screens that do not mention each other
+UX-010 | information-architecture | medium | model | The detail view repeats the row it was opened from
+UX-011 | information-architecture | low | model | Named relations rendered as text rather than links
+UX-012 | information-architecture | medium | model | Settings rendered as one ungrouped sequence of controls
+UX-013 | information-architecture | medium | model | A drill-down screen renders no return path
 UX-014 | interaction | high | model | Destructive action weighted equally with its safe sibling
 UX-015 | interaction | high | model | Irreversible action ships with no undo and no confirmation
 UX-016 | interaction | medium | hybrid | Interactive target smaller than the minimum tap/click size
