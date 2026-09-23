@@ -11,6 +11,66 @@ export const SEVERITIES = ['high', 'medium', 'low'];
 // `scanner` modes: something else is already answering that question.
 export const DETECTIONS = ['model', 'scanner', 'hybrid', 'conformance'];
 
+// The ID is not a serial number: its range declares the category. Promoting
+// the convention to a checked rule means a mode's number and its category can
+// never drift apart, and makes "the catalog is complete" a real assertion
+// rather than a count that happens to match.
+export const CATEGORY_RANGES = {
+  'information-architecture': [1, 13],
+  'interaction': [14, 30],
+  'visual-hierarchy': [31, 45],
+  'state-coverage': [46, 60],
+  'forms': [61, 75],
+  'data-display': [76, 90],
+  'accessibility': [91, 100],
+  'system-consistency': [101, 110],
+  'conformance': [111, 120],
+};
+
+// Closed, because select-modes.mjs filters on these values. A freeform
+// vocabulary makes the selector guessable-at rather than callable: a caller
+// who types `tables` instead of `table` would get an empty result and
+// conclude no mode applies. Exit 2 on an unknown kind is only possible
+// because this list is finite.
+export const APPLIES_TO = [
+  'any',
+  'page', 'page-header', 'breadcrumb', 'navbar', 'nav-item', 'sidebar', 'toolbar', 'menu', 'tabs',
+  'list', 'table', 'table-row-actions', 'pagination',
+  'card', 'grid', 'detail-view', 'dashboard', 'stat-tile', 'chart', 'search-results',
+  'form', 'field', 'form-footer', 'form-submit', 'stepper', 'select',
+  'button', 'button-group', 'icon-button', 'link',
+  'modal', 'toast', 'tooltip', 'badge', 'status-indicator', 'avatar',
+  'empty-state', 'settings', 'generated-ui',
+];
+
+const SECTION_MINIMUMS = {
+  '## Signal': 120,
+  '## Why it fails': 120,
+  '## Fix': 100,
+  '## Counter-example — when this is fine': 80,
+};
+
+// A Fix that says "add appropriate error handling" has told the reader
+// nothing they did not already know. These phrases are how a mode file looks
+// when its author had no specific remedy in mind.
+const GENERIC_FIX_PHRASES = [
+  'add appropriate', 'consider using', 'make sure to',
+  'as needed', 'where necessary', 'as appropriate',
+];
+
+// Section bodies, keyed by heading. No /m flag on the body slice: headings are
+// matched line-anchored, then each body runs to the next heading.
+export function sectionBodies(body) {
+  const out = {};
+  const headings = [...body.matchAll(/^## (.*)$/gm)];
+  for (let i = 0; i < headings.length; i++) {
+    const start = headings[i].index + headings[i][0].length;
+    const end = i + 1 < headings.length ? headings[i + 1].index : body.length;
+    out[`## ${headings[i][1]}`] = body.slice(start, end).trim();
+  }
+  return out;
+}
+
 const REQUIRED_SECTIONS = [
   '## Signal',
   '## Why it fails',
@@ -51,7 +111,23 @@ export function validateModeFile({ filename, text }) {
   if (!CATEGORIES.includes(data.category)) errors.push(`${filename}: unknown category "${data.category}"`);
   if (!SEVERITIES.includes(data.severity)) errors.push(`${filename}: unknown severity "${data.severity}"`);
   if (!DETECTIONS.includes(data.detection)) errors.push(`${filename}: unknown detection "${data.detection}"`);
-  if (!Array.isArray(data.appliesTo) || data.appliesTo.length === 0) errors.push(`${filename}: appliesTo must be a non-empty list`);
+  if (!Array.isArray(data.appliesTo) || data.appliesTo.length === 0) {
+    errors.push(`${filename}: appliesTo must be a non-empty list`);
+  } else {
+    for (const kind of data.appliesTo) {
+      if (!APPLIES_TO.includes(kind)) errors.push(`${filename}: appliesTo value "${kind}" is not in APPLIES_TO`);
+    }
+  }
+
+  // The ID range declares the category. Checked only when both are otherwise
+  // valid, so a malformed ID reports one clear error instead of two.
+  if (/^UX-\d{3}$/.test(data.id ?? '') && CATEGORY_RANGES[data.category]) {
+    const n = Number(data.id.slice(3));
+    const [lo, hi] = CATEGORY_RANGES[data.category];
+    if (n < lo || n > hi) {
+      errors.push(`${filename}: id ${data.id} is outside the ${data.category} range ${lo}-${hi}`);
+    }
+  }
 
   // Extract all ## headings (line-anchored)
   const headings = [];
@@ -87,6 +163,19 @@ export function validateModeFile({ filename, text }) {
         break;
       }
     }
+  }
+
+  const sections = sectionBodies(body);
+  for (const [heading, min] of Object.entries(SECTION_MINIMUMS)) {
+    const text = sections[heading];
+    if (text !== undefined && text.length < min) {
+      errors.push(`${filename}: "${heading.replace(/^## /, '')}" is ${text.length} chars, needs at least ${min}`);
+    }
+  }
+
+  const fix = (sections['## Fix'] ?? '').toLowerCase();
+  for (const phrase of GENERIC_FIX_PHRASES) {
+    if (fix.includes(phrase)) errors.push(`${filename}: Fix contains the non-answer "${phrase}"`);
   }
 
   return errors;

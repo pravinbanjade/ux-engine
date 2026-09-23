@@ -4,7 +4,7 @@ title: Colour is the only signal distinguishing meaning
 category: accessibility
 severity: high
 detection: model
-appliesTo: [badge, chart, status-indicator, validation]
+appliesTo: [badge, chart, status-indicator, field]
 ---
 ## Signal
 Two or more states, categories, or validity conditions are distinguished

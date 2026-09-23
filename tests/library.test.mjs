@@ -11,16 +11,20 @@ detection: model
 appliesTo: [button-group, table-row-actions]
 ---
 ## Signal
-Delete rendered with the same variant as Edit.
+A row action group renders Delete with the same button variant, size and colour weight as Edit, so the
+irreversible action and the reversible one are visually interchangeable.
 
 ## Why it fails
-Users misfire on the irreversible option.
+A pointer travelling to a row of identical buttons is aimed by position, not by reading. Weighting the
+destructive action equally makes a misfire a matter of a few pixels, and the result cannot be undone.
 
 ## Fix
-Demote the destructive action.
+Render Delete as a text or ghost button and keep the solid variant for Edit, so the destructive option
+costs one extra beat of attention to reach.
 
 ## Counter-example — when this is fine
-A dedicated destructive-only screen.
+A screen whose only purpose is deletion, where every action present is destructive and there is no safer
+sibling to confuse it with.
 `;
 
 test('parseFrontmatter splits data from body', () => {
@@ -181,4 +185,70 @@ test('modeIndex fix line is a whole paragraph, not a wrapped fragment', () => {
   for (const mode of modeIndex(modesDir).values()) {
     assert.match(mode.fix, /[.!?]$/, `${mode.id}: fix must end as a complete sentence, got "${mode.fix}"`);
   }
+});
+
+import { CATEGORY_RANGES, APPLIES_TO, CATEGORIES } from '../scripts/lib/library.mjs';
+
+// A mode file body long enough to clear every section minimum, so these tests
+// isolate the rule under test instead of tripping the length floors.
+const pad = (n) => 'x'.repeat(n);
+const bodyOf = ({ signal = pad(130), why = pad(130), fix = pad(110), counter = pad(90) } = {}) =>
+  `## Signal\n${signal}\n\n## Why it fails\n${why}\n\n## Fix\n${fix}\n\n## Counter-example — when this is fine\n${counter}\n`;
+
+const fileOf = (front, bodyOpts) => ({
+  filename: `${front.id}-x.md`,
+  text: `---\nid: ${front.id}\ntitle: ${front.title ?? 'A title'}\ncategory: ${front.category}\nseverity: ${front.severity ?? 'medium'}\ndetection: ${front.detection ?? 'model'}\nappliesTo: [${(front.appliesTo ?? ['table']).join(', ')}]\n---\n${bodyOf(bodyOpts)}`,
+});
+
+test('CATEGORY_RANGES covers 001-120 with no gaps or overlaps', () => {
+  const covered = new Set();
+  for (const [category, [lo, hi]] of Object.entries(CATEGORY_RANGES)) {
+    assert.ok(CATEGORIES.includes(category), `unknown category ${category}`);
+    for (let n = lo; n <= hi; n++) {
+      assert.ok(!covered.has(n), `${n} claimed twice`);
+      covered.add(n);
+    }
+  }
+  assert.equal(covered.size, 120);
+  for (let n = 1; n <= 120; n++) assert.ok(covered.has(n), `${n} uncovered`);
+});
+
+test('a mode whose ID falls outside its category range is rejected', () => {
+  const errors = validateModeFile(fileOf({ id: 'UX-067', category: 'interaction' }));
+  assert.ok(errors.some((e) => /range/.test(e)), errors.join('\n'));
+});
+
+test('a mode whose ID falls inside its category range is accepted', () => {
+  assert.deepEqual(validateModeFile(fileOf({ id: 'UX-067', category: 'forms' })), []);
+});
+
+test('an appliesTo value outside the vocabulary is rejected', () => {
+  const errors = validateModeFile(fileOf({ id: 'UX-067', category: 'forms', appliesTo: ['widget'] }));
+  assert.ok(errors.some((e) => /widget/.test(e) && /appliesTo/.test(e)), errors.join('\n'));
+});
+
+test('APPLIES_TO has no duplicates and includes the wildcard', () => {
+  assert.equal(new Set(APPLIES_TO).size, APPLIES_TO.length);
+  assert.ok(APPLIES_TO.includes('any'));
+});
+
+test('a section under its minimum length is rejected', () => {
+  const errors = validateModeFile(fileOf({ id: 'UX-067', category: 'forms' }, { fix: 'Fix it.' }));
+  assert.ok(errors.some((e) => /Fix/.test(e) && /at least 100/.test(e)), errors.join('\n'));
+});
+
+test('generic filler in the Fix section is rejected', () => {
+  const errors = validateModeFile(
+    fileOf({ id: 'UX-067', category: 'forms' }, { fix: `Consider using a review step ${pad(90)}` }),
+  );
+  assert.ok(errors.some((e) => /consider using/i.test(e)), errors.join('\n'));
+});
+
+test('generic filler outside the Fix section is not rejected', () => {
+  // The ban targets vague *remedies*. A Signal may legitimately describe code
+  // that adds something "as needed" — that is a report, not a non-answer.
+  assert.deepEqual(
+    validateModeFile(fileOf({ id: 'UX-067', category: 'forms' }, { signal: `Rows render as needed ${pad(110)}` })),
+    [],
+  );
 });

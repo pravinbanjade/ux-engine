@@ -86,3 +86,21 @@ test('the audit skill tells the reader to skip conformance modes', () => {
   const skill = readFileSync(fileURLToPath(new URL('../skills/ux-audit/SKILL.md', import.meta.url)), 'utf8');
   assert.match(skill, /detection: conformance/);
 });
+
+import { APPLIES_TO, CATEGORY_RANGES } from '../scripts/lib/library.mjs';
+
+test('every appliesTo value in the catalog is in the vocabulary', () => {
+  for (const m of modes) {
+    for (const kind of m.data.appliesTo) {
+      assert.ok(APPLIES_TO.includes(kind), `${m.filename}: "${kind}" is not in APPLIES_TO`);
+    }
+  }
+});
+
+test('every mode ID sits in its category range', () => {
+  for (const m of modes) {
+    const [lo, hi] = CATEGORY_RANGES[m.data.category];
+    const n = Number(m.data.id.slice(3));
+    assert.ok(n >= lo && n <= hi, `${m.filename}: ${m.data.id} outside ${m.data.category} ${lo}-${hi}`);
+  }
+});
