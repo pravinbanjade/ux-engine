@@ -169,7 +169,7 @@ const KIND_TO_GROUPS = { color: ['color'], length: ['spacing', 'radius', 'type']
 //
 // A shorthand's later values keep the property's hint: both values in
 // "padding: 12px 16px" are hinted `spacing`, via SHORTHAND_VALUE below.
-const CONTEXT_WINDOW = 30;
+const CONTEXT_WINDOW = 48;
 const HINT_GROUPS = { type: ['type'], radius: ['radius'], spacing: ['spacing'] };
 
 // A prefix/property name must sit at a real word boundary — preceded by the
@@ -202,19 +202,54 @@ function bracketHintRe(prefixes) {
 // so the hint cannot leak from one declaration into the next.
 const SHORTHAND_VALUE = String.raw`(?:[+-]?(?:\d+\.\d+|\.\d+|\d+)(?:px|rem|em|%)?|auto|solid|dashed|dotted|inset)\s+`;
 
+// An operand inside an arithmetic wrapper. The unit list is the whole point
+// of this rule and is deliberately short: viewport units (vh, vw, vmin,
+// vmax, and their small/large/dynamic variants) are ABSENT, so an
+// expression containing one cannot match. That is not an oversight to be
+// tidied up later — `calc(100vh - 56px)` subtracts a header height from the
+// viewport, and the 56px is a piece of layout arithmetic, not a step on the
+// spacing scale. Offering it the spacing token it happens to equal is
+// restyle defect 5 wearing a different hat. Because the pattern is anchored
+// from the property name to the literal, an unmatchable `100vh` breaks the
+// whole span and the literal falls out with no hint at all — fail-closed by
+// construction, with no separate branch to get wrong.
+const WRAPPER_OPERAND = String.raw`(?:[+-]?(?:\d+\.\d+|\.\d+|\d+)(?:px|rem|em|%|ch|ex)?|[-+*/,])\s*`;
+
+// calc(), min(), max() and clamp() wrap a property's own value in
+// arithmetic; the lengths inside them are still that property's lengths,
+// for the same reason a shorthand's later values are. The gate stays the
+// PROPERTY, not the function: `filter: blur(16px)` and
+// `transform: translateY(16px)` are unhinted because filter and transform
+// appear in no list below, not because blur and translateY are missing
+// from this one.
+const ARITHMETIC_WRAPPER = String.raw`(?:(?:calc|min|max|clamp)\(\s*(?:${WRAPPER_OPERAND})*)?`;
+
+// A property is listed once, in kebab case, and both spellings are derived
+// from it: `padding-top` also matches `paddingTop`, because stripping the
+// hyphens gives `paddingtop` and these patterns are case-insensitive.
+// Hand-maintaining the second spelling is what went wrong before — the type
+// list carried `lineheight` and `letterspacing` but never `line-height` or
+// `letter-spacing`, so stylesheets went unhinted, while the spacing list
+// carried 43 kebab longhands and not one camelCase compound, so style
+// objects did. Deriving both makes a half-listed property impossible.
+function spellings(property) {
+  const stripped = property.replace(/-/g, '');
+  return stripped === property ? [property] : [property, stripped];
+}
+
 function propertyHintRe(properties) {
-  const alt = properties.map(escapeForRegex).join('|');
-  return new RegExp(`${HINT_BOUNDARY}(?:${alt})\\s*:\\s*['"\`]?(?:${SHORTHAND_VALUE})*$`, 'i');
+  const alt = properties.flatMap(spellings).map(escapeForRegex).join('|');
+  return new RegExp(`${HINT_BOUNDARY}(?:${alt})\\s*:\\s*['"\`]?(?:${SHORTHAND_VALUE})*${ARITHMETIC_WRAPPER}$`, 'i');
 }
 
 const HINT_MATCHERS = [
   ['type', [
     bracketHintRe(['text', 'leading', 'tracking']),
-    propertyHintRe(['font-size', 'fontsize', 'lineheight', 'letterspacing']),
+    propertyHintRe(['font-size', 'line-height', 'letter-spacing']),
   ]],
   ['radius', [
     bracketHintRe(['rounded']),
-    propertyHintRe(['border-radius', 'borderradius']),
+    propertyHintRe(['border-radius']),
   ]],
   ['spacing', [
     bracketHintRe([
@@ -238,7 +273,10 @@ const HINT_MATCHERS = [
       'inline-size', 'block-size', 'min-inline-size', 'max-inline-size',
       'min-block-size', 'max-block-size',
       'gap', 'row-gap', 'column-gap', 'grid-gap',
-      'inset', 'inset-block', 'inset-inline', 'top', 'right', 'bottom', 'left',
+      'inset', 'inset-block', 'inset-inline',
+      'inset-block-start', 'inset-block-end',
+      'inset-inline-start', 'inset-inline-end',
+      'top', 'right', 'bottom', 'left',
     ]),
   ]],
 ];
