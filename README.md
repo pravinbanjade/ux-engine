@@ -45,20 +45,37 @@ UX-101 | src/legacy/** | pre-migration theme, scheduled for removal
 
 Matching findings stop being reported and are counted in the report summary.
 
-## When a token group is too thin to be a scale
+## When the scanner offers no token
 
-A mode whose advice is "snap to the nearest step in the scale" has nothing to
-offer when the group it would snap to holds fewer than three distinct values.
-Rather than report hundreds of findings measured against a scale that is not
-there, the scanner suppresses that mode and says so:
+A suggestion the reader cannot act on is worse than none, so the scanner
+withholds one in two situations and reports each with a count.
+
+**The group is too thin to be a scale.** A mode whose advice is "snap to the
+nearest step" has nothing to offer when the group it would snap to holds fewer
+than three distinct values:
 
 ```
-UX-102 suppressed for spacing|radius|type — 2 distinct values, not a scale (775 literals)
+UX-102 suppressed for spacing — 2 distinct values, not a scale (775 literals)
 ```
 
-A suppression is not a pass. It means the recorded design system is too thin
-for that check, and the remedy is to add tokens — or to correct
-`styling.tokenSource` if the real ones were never found.
+The remedy is to add tokens, or to correct `styling.tokenSource` if the real
+ones were never found.
+
+**The literal's context names no group.** A length is measured only against the
+group its surrounding code identifies — `padding:` means spacing, `rounded-[`
+means radius, `font-size:` means type. Where nothing recognisable precedes it,
+as in a `box-shadow` offset or a `blur()` radius, no group applies:
+
+```
+UX-102 suppressed for 69 length(s) whose surrounding code does not say which token group they belong to — no scale was applied, so no substitution was offered
+```
+
+This is why a shadow offset is never handed a border-radius token whose value
+happens to match. The trade is that a length whose property is not in the
+scanner's hint table is not checked at all, so the table is the thing that has
+to be right.
+
+A suppression is not a pass in either case.
 
 ## Why `/ux-design` asks five questions first
 

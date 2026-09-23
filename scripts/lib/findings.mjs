@@ -182,7 +182,18 @@ export function renderReport(envelope, modes) {
   if (envelope.suppressed?.length) {
     out.push('## Suppressed', '');
     for (const s of envelope.suppressed) {
-      out.push(`- ${s.id} suppressed for ${s.groups.join('|')} — ${s.distinctValues} distinct values, not a scale (${s.count} literals)`);
+      // An entry written before `reason` existed has none, and it is always an
+      // unusable-scale entry — that was the only reason at the time. Defaulting
+      // keeps an older findings file readable.
+      if (s.reason === 'no-context') {
+        // No cause is named: the entry carries a count and nothing else, and
+        // the scanner does not record which contexts produced it. Listing
+        // likely ones tells a reader whose own literal was suppressed for a
+        // different reason that the line is not about them.
+        out.push(`- ${s.id} suppressed for ${s.count} length(s) whose surrounding code does not say which token group they belong to — no scale was applied, so no substitution was offered`);
+      } else {
+        out.push(`- ${s.id} suppressed for ${s.groups.join('|')} — ${s.distinctValues} distinct values, not a scale (${s.count} literals)`);
+      }
     }
     out.push('');
   }

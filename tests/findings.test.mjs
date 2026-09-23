@@ -337,3 +337,63 @@ test('the same literal at the same column is still one finding', () => {
   };
   assert.equal(mergeFindings([a, { ...a }], []).length, 1);
 });
+
+test('an unusable-scale suppression renders the sentence it always rendered', () => {
+  const envelope = buildEnvelope({
+    generatedAt: '2026-09-24T00:00:00.000Z',
+    profileHash: 'abc',
+    scope: { kind: 'path', value: 'src/' },
+    findings: [],
+    suppressed: [{ id: 'UX-102', reason: 'unusable-scale', groups: ['spacing'], distinctValues: 2, count: 23 }],
+  });
+  const report = renderReport(envelope);
+  assert.match(report, /UX-102 suppressed for spacing — 2 distinct values, not a scale \(23 literals\)/);
+});
+
+test('a suppression entry written before reason existed still renders', () => {
+  // report-findings.mjs can be pointed at a findings file from an older build.
+  // The entry has no `reason`; the renderer must fall back to the shape it has
+  // rather than print "undefined" or throw.
+  const envelope = buildEnvelope({
+    generatedAt: '2026-09-24T00:00:00.000Z',
+    profileHash: 'abc',
+    scope: { kind: 'path', value: 'src/' },
+    findings: [],
+    suppressed: [{ id: 'UX-103', groups: ['motion'], distinctValues: 0, count: 13 }],
+  });
+  const report = renderReport(envelope);
+  assert.match(report, /UX-103 suppressed for motion — 0 distinct values, not a scale \(13 literals\)/);
+  assert.ok(!report.includes('undefined'), report);
+});
+
+test('a no-context suppression renders its own sentence with no undefined', () => {
+  const envelope = buildEnvelope({
+    generatedAt: '2026-09-24T00:00:00.000Z',
+    profileHash: 'abc',
+    scope: { kind: 'path', value: 'src/' },
+    findings: [],
+    suppressed: [{ id: 'UX-102', reason: 'no-context', count: 69 }],
+  });
+  const report = renderReport(envelope);
+  assert.match(report, /UX-102 suppressed for 69 length\(s\) whose surrounding code does not say which token group/);
+  assert.ok(!report.includes('undefined'), report);
+  assert.ok(!report.includes('not a scale'), 'no-context must not borrow the unusable-scale sentence');
+});
+
+test('the no-context sentence does not claim a cause it cannot know', () => {
+  // The entry carries a count and nothing else. Naming shadows and filters
+  // tells a reader whose paddingTop literal was suppressed that the line is
+  // not about them, which is the opposite of what a suppression line is for.
+  const envelope = buildEnvelope({
+    generatedAt: '2026-09-24T00:00:00.000Z',
+    profileHash: 'abc',
+    scope: { kind: 'path', value: 'src/' },
+    findings: [],
+    suppressed: [{ id: 'UX-102', reason: 'no-context', count: 69 }],
+  });
+  const report = renderReport(envelope);
+  for (const claim of ['shadow', 'filter', 'border width']) {
+    assert.ok(!report.toLowerCase().includes(claim), `must not assert "${claim}" as the cause: ${report}`);
+  }
+  assert.match(report, /69/);
+});

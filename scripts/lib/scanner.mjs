@@ -161,10 +161,14 @@ const KIND_TO_GROUPS = { color: ['color'], length: ['spacing', 'radius', 'type']
 // ("text-[", "rounded-[", "p-[", ...) or a CSS/JS property name
 // ("font-size:", "border-radius:", "padding:", ...) — and, when it
 // recognises one, names the single token group that literal actually
-// belongs to. No recognisable context (the common case for a second value
-// on the same line, e.g. the "16px" in "padding: 12px 16px") means no
-// narrowing: nearestToken falls back to considering spacing, radius and
-// type together, exactly as before.
+// belongs to. A context it does not recognise names no group at all, and
+// the literal is suppressed rather than measured against every scale in
+// turn — see the fail-closed branch in scanRepo. That is what keeps a
+// box-shadow offset from being handed a border-radius token whose value
+// happens to match.
+//
+// A shorthand's later values keep the property's hint: both values in
+// "padding: 12px 16px" are hinted `spacing`, via SHORTHAND_VALUE below.
 const CONTEXT_WINDOW = 30;
 const HINT_GROUPS = { type: ['type'], radius: ['radius'], spacing: ['spacing'] };
 
@@ -358,8 +362,22 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
     const startLength = findings.length;
     try {
       for (const literal of scanLiterals(text)) {
-        const groups = (literal.kind === 'length' && literal.hint && HINT_GROUPS[literal.hint])
-          || KIND_TO_GROUPS[literal.kind];
+        // A length whose context we could not identify gets no group at all.
+        // The old `|| KIND_TO_GROUPS[literal.kind]` matched it against every
+        // length scale at once, so a box-shadow offset of 10px was offered a
+        // 10px border-radius token: an exact numeric match and a meaningless
+        // one. Colours and durations have no hint concept and one group each,
+        // so they keep taking the map.
+        const groups = literal.kind === 'length'
+          ? (HINT_GROUPS[literal.hint] ?? null)
+          : KIND_TO_GROUPS[literal.kind];
+
+        if (groups === null) {
+          const tally = suppressed.get('UX-102|no-context');
+          if (tally) tally.count += 1;
+          else suppressed.set('UX-102|no-context', { id: 'UX-102', reason: 'no-context', count: 1 });
+          continue;
+        }
         const candidates = {};
         for (const group of groups) Object.assign(candidates, profile.tokens[group] ?? {});
         // A mode whose advice is "snap to the nearest step" has nothing to
@@ -373,6 +391,7 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
           else {
             suppressed.set(`${id}|${groups.join('|')}`, {
               id,
+              reason: 'unusable-scale',
               groups: [...groups],
               distinctValues: new Set(Object.values(candidates)).size,
               count: 1,
