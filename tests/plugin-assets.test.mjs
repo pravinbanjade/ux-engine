@@ -74,10 +74,12 @@ test('the audit skill and both commands exist', () => {
 
 test('the audit skill routes every mechanical step through a script', () => {
   const skill = readFileSync(join(root, 'skills/ux-audit/SKILL.md'), 'utf8');
-  for (const script of ['check-profile.mjs', 'scan-off-system.mjs', 'report-findings.mjs']) {
+  for (const script of ['check-profile.mjs', 'scan-off-system.mjs', 'report-findings.mjs', 'select-modes.mjs']) {
     assert.match(skill, new RegExp(script.replace('.', '\\.')), `skill must call ${script}`);
   }
-  assert.match(skill, /INDEX\.md/, 'skill must read the index before any mode file');
+  // Mode selection used to be the reader's job over INDEX.md. At 120 modes it
+  // is a script like every other mechanical step, which is why select-modes
+  // joined the list above rather than the index staying asserted here.
 });
 
 test('the review command scopes to the diff and the audit command to a path', () => {

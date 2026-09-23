@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { loadModes, validateModeFile, checkIndex, CATEGORIES } from '../scripts/lib/library.mjs';
+import { loadModes, validateModeFile, checkIndex, CATEGORIES, CATEGORY_RANGES } from '../scripts/lib/library.mjs';
 
 const dir = fileURLToPath(new URL('../skills/failure-modes/references', import.meta.url));
 const modes = loadModes(dir);
@@ -18,19 +18,28 @@ test('the index is in sync', () => {
   assert.deepEqual(checkIndex(modes, index), []);
 });
 
-test('at least 20 modes are seeded', () => {
-  assert.ok(modes.length >= 20, `only ${modes.length} modes`);
-});
-
-test('every category has at least two modes', () => {
-  for (const category of CATEGORIES) {
-    const count = modes.filter((m) => m.data.category === category).length;
-    assert.ok(count >= 2, `category ${category} has ${count} mode(s)`);
+test('the catalog is complete: IDs 001-120, each exactly once', () => {
+  const nums = modes.map((m) => Number(m.data.id.slice(3))).sort((a, b) => a - b);
+  assert.equal(nums.length, 120, `catalog holds ${nums.length} modes`);
+  for (let n = 1; n <= 120; n++) {
+    assert.equal(nums[n - 1], n, `UX-${String(n).padStart(3, '0')} is missing or duplicated`);
   }
 });
 
-test('all three detection kinds are represented', () => {
-  for (const kind of ['model', 'scanner', 'hybrid']) {
+test('every category fills its declared range exactly', () => {
+  for (const category of CATEGORIES) {
+    const [lo, hi] = CATEGORY_RANGES[category];
+    const found = modes
+      .filter((m) => m.data.category === category)
+      .map((m) => Number(m.data.id.slice(3)))
+      .sort((a, b) => a - b);
+    const expected = Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+    assert.deepEqual(found, expected, `${category} does not fill ${lo}-${hi}`);
+  }
+});
+
+test('all four detection kinds are represented', () => {
+  for (const kind of ['model', 'scanner', 'hybrid', 'conformance']) {
     assert.ok(modes.some((m) => m.data.detection === kind), `no ${kind} mode`);
   }
 });
@@ -78,11 +87,50 @@ test('the three conformance modes exist and are detected as conformance', () => 
   }
 });
 
-test('the audit skill tells the reader to skip conformance modes', () => {
+test('the audit skill excludes conformance and scanner modes when selecting', () => {
   // /ux-audit has no approved wireframe, so a conformance mode has nothing to
-  // compare against. Without this clause the skill would read the mode file,
-  // find no wireframe, and either invent one or report nothing — both worse
-  // than not selecting it.
+  // compare against, and the scanner already reported its own modes in step 2.
+  // Both exclusions now travel as selector flags rather than prose the reader
+  // has to remember to apply.
   const skill = readFileSync(fileURLToPath(new URL('../skills/ux-audit/SKILL.md', import.meta.url)), 'utf8');
-  assert.match(skill, /detection: conformance/);
+  assert.match(skill, /--exclude-detection scanner,conformance/);
+  assert.ok(!/Read `\$\{CLAUDE_PLUGIN_ROOT\}\/skills\/failure-modes\/references\/INDEX\.md`/.test(skill),
+    'the audit should select, not read the whole index');
+});
+
+test('the enforcer selects rather than reading the whole index', () => {
+  const agent = readFileSync(fileURLToPath(new URL('../agents/ux-system-enforcer.md', import.meta.url)), 'utf8');
+  assert.match(agent, /select-modes\.mjs/);
+  assert.match(agent, /--exclude-detection scanner,conformance/);
+});
+
+test('the enforcer names every conformance mode', () => {
+  const agent = readFileSync(fileURLToPath(new URL('../agents/ux-system-enforcer.md', import.meta.url)), 'utf8');
+  for (const n of [111, 112, 113, 114, 115, 116, 117, 118, 119, 120]) {
+    assert.match(agent, new RegExp(`UX-${n}`), `enforcer does not mention UX-${n}`);
+  }
+});
+
+import { APPLIES_TO } from '../scripts/lib/library.mjs';
+
+test('every appliesTo value in the catalog is in the vocabulary', () => {
+  for (const m of modes) {
+    for (const kind of m.data.appliesTo) {
+      assert.ok(APPLIES_TO.includes(kind), `${m.filename}: "${kind}" is not in APPLIES_TO`);
+    }
+  }
+});
+
+test('every mode ID sits in its category range', () => {
+  for (const m of modes) {
+    const [lo, hi] = CATEGORY_RANGES[m.data.category];
+    const n = Number(m.data.id.slice(3));
+    assert.ok(n >= lo && n <= hi, `${m.filename}: ${m.data.id} outside ${m.data.category} ${lo}-${hi}`);
+  }
+});
+
+import { checkCrossFile } from '../scripts/lib/library.mjs';
+
+test('no two modes duplicate an id, a title, or a signal', () => {
+  assert.deepEqual(checkCrossFile(modes), []);
 });

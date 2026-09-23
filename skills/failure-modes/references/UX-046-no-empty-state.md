@@ -11,7 +11,9 @@ The component that renders a list, table, or dashboard's item collection has
 no conditional branch for a zero-length data set — reading the code or
 markup, an empty array falls through to the same container the populated
 state uses, rendering a bare header over blank whitespace, or a table with a
-header row and no body rows at all.
+header row and no body rows at all. A branch that renders even a single
+line of text for the zero case is not this finding — this mode is about the
+branch being absent, not about it being thin.
 
 ## Why it fails
 A first-time user seeing an empty screen cannot tell whether it's empty

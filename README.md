@@ -80,15 +80,40 @@ while asking.
 
 ## The failure-mode library
 
-`skills/failure-modes/references/` holds one file per named failure mode, each
-with a Signal, why it fails, a fix, and a counter-example saying when it is
-fine. `INDEX.md` is the one-line-per-mode index the audit reads first.
+`skills/failure-modes/references/` holds one file per named failure mode —
+**120 of them**, IDs `UX-001` to `UX-120` — each with a Signal, why it fails, a
+fix, and a counter-example saying when it is fine. Every ID sits in a range that
+declares its category, which lint enforces:
+
+| Category | IDs |
+|---|---|
+| information-architecture | 001-013 |
+| interaction | 014-030 |
+| visual-hierarchy | 031-045 |
+| state-coverage | 046-060 |
+| forms | 061-075 |
+| data-display | 076-090 |
+| accessibility | 091-100 |
+| system-consistency | 101-110 |
+| conformance | 111-120 |
+
+`INDEX.md` is the one-line-per-mode catalog. Nothing reads it whole: an audit
+names the surfaces in front of it and asks for the modes that could apply.
+
+```
+npm run select -- --kinds table,list --exclude-detection scanner,conformance
+```
+
+The surface vocabulary is closed — `APPLIES_TO` in `scripts/lib/library.mjs` —
+so a mistyped kind exits 2 and says so, rather than returning nothing and
+letting the caller conclude no mode applies.
 
 ## Development
 
 ```
 npm test              # node --test over tests/
-npm run lint:library  # every mode file well-formed and indexed
+npm run lint:library  # every mode file well-formed, in range, and indexed
+npm run select -- --kinds table,form   # the modes that could apply to a surface
 ```
 
 Zero dependencies, runtime and dev. See `docs/superpowers/specs/` for the
