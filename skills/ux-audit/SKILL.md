@@ -30,19 +30,27 @@ cannot do: deciding whether a component actually exhibits a failure mode.
    <repo-root>/.ux-engine/profile.json --root <repo-root>` (add `--path <dir>`
    when auditing one directory) and save stdout to a temp file.
 
-3. **Read the index only.**
-   Read `${CLAUDE_PLUGIN_ROOT}/skills/failure-modes/references/INDEX.md`. It is
-   one line per mode: ID, category, severity, detection, title. Do not read
-   mode files yet.
+3. **Name the surfaces.**
+   List the files in scope and say what each one is, in the catalog's own
+   vocabulary: `table`, `form`, `list`, `detail-view`, `modal`, `chart`,
+   `stat-tile`, `settings`, and so on. The full vocabulary is `APPLIES_TO` in
+   `${CLAUDE_PLUGIN_ROOT}/scripts/lib/library.mjs`. This is the judgment call;
+   the next step is mechanical.
 
 4. **Select candidates.**
-   List the files in scope and what each one is: a table, a form, a list, a
-   detail view, a dialog. Pick the modes whose category and `appliesTo` match
-   what you are actually looking at — a form pulls forms and state-coverage
-   modes, a data table pulls data-display and information-architecture. Skip
-   `detection: scanner` modes; the scanner already reported those. Skip
-   `detection: conformance` modes too — they compare code against an approved
-   wireframe, which only the generation command has.
+   Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/select-modes.mjs --kinds
+   <the kinds you just named> --exclude-detection scanner,conformance`.
+
+   It prints one index line per candidate mode. Read only those. The two
+   exclusions are not optional: `scanner` modes were already reported in step
+   2, and `conformance` modes compare code against an approved wireframe,
+   which only the generation command has — selecting one here would mean
+   either inventing a wireframe or reporting nothing.
+
+   If the command exits 2, you named a surface kind that is not in the
+   vocabulary. Fix the spelling and run it again; do not fall back to reading
+   the index, which holds 120 lines and would cost more context than the audit
+   has to spare.
 
 5. **Read only the selected mode files, then judge.**
    For each candidate mode, read its file and check the code against its

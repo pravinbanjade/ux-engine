@@ -78,13 +78,28 @@ test('the three conformance modes exist and are detected as conformance', () => 
   }
 });
 
-test('the audit skill tells the reader to skip conformance modes', () => {
+test('the audit skill excludes conformance and scanner modes when selecting', () => {
   // /ux-audit has no approved wireframe, so a conformance mode has nothing to
-  // compare against. Without this clause the skill would read the mode file,
-  // find no wireframe, and either invent one or report nothing — both worse
-  // than not selecting it.
+  // compare against, and the scanner already reported its own modes in step 2.
+  // Both exclusions now travel as selector flags rather than prose the reader
+  // has to remember to apply.
   const skill = readFileSync(fileURLToPath(new URL('../skills/ux-audit/SKILL.md', import.meta.url)), 'utf8');
-  assert.match(skill, /detection: conformance/);
+  assert.match(skill, /--exclude-detection scanner,conformance/);
+  assert.ok(!/Read `\$\{CLAUDE_PLUGIN_ROOT\}\/skills\/failure-modes\/references\/INDEX\.md`/.test(skill),
+    'the audit should select, not read the whole index');
+});
+
+test('the enforcer selects rather than reading the whole index', () => {
+  const agent = readFileSync(fileURLToPath(new URL('../agents/ux-system-enforcer.md', import.meta.url)), 'utf8');
+  assert.match(agent, /select-modes\.mjs/);
+  assert.match(agent, /--exclude-detection scanner,conformance/);
+});
+
+test('the enforcer names every conformance mode', () => {
+  const agent = readFileSync(fileURLToPath(new URL('../agents/ux-system-enforcer.md', import.meta.url)), 'utf8');
+  for (const n of [111, 112, 113, 114, 115, 116, 117, 118, 119, 120]) {
+    assert.match(agent, new RegExp(`UX-${n}`), `enforcer does not mention UX-${n}`);
+  }
 });
 
 import { APPLIES_TO, CATEGORY_RANGES } from '../scripts/lib/library.mjs';
