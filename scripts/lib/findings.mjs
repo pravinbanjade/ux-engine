@@ -182,7 +182,14 @@ export function renderReport(envelope, modes) {
   if (envelope.suppressed?.length) {
     out.push('## Suppressed', '');
     for (const s of envelope.suppressed) {
-      out.push(`- ${s.id} suppressed for ${s.groups.join('|')} — ${s.distinctValues} distinct values, not a scale (${s.count} literals)`);
+      // An entry written before `reason` existed has none, and it is always an
+      // unusable-scale entry — that was the only reason at the time. Defaulting
+      // keeps an older findings file readable.
+      if (s.reason === 'no-context') {
+        out.push(`- ${s.id} suppressed for ${s.count} length(s) whose context names no token group — shadows, filters, border widths and similar have no scale to snap to`);
+      } else {
+        out.push(`- ${s.id} suppressed for ${s.groups.join('|')} — ${s.distinctValues} distinct values, not a scale (${s.count} literals)`);
+      }
     }
     out.push('');
   }

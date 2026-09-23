@@ -373,6 +373,7 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
           else {
             suppressed.set(`${id}|${groups.join('|')}`, {
               id,
+              reason: 'unusable-scale',
               groups: [...groups],
               distinctValues: new Set(Object.values(candidates)).size,
               count: 1,

@@ -663,3 +663,38 @@ test('directional spacing longhands carry the spacing hint', () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('an unusable-scale suppression carries its reason', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-reason-'));
+  try {
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src/Thing.tsx'), "const s = { padding: '17px' };\n");
+    const profile = { styling: { tokenSource: [] }, tokens: { spacing: { '--a': '8px', '--b': '16px' } } };
+    const { suppressed } = scanRepo(root, profile, {});
+    assert.equal(suppressed.length, 1);
+    assert.equal(suppressed[0].reason, 'unusable-scale');
+    assert.deepEqual(suppressed[0].groups, ['spacing']);
+    assert.equal(suppressed[0].distinctValues, 2);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a duration against an empty motion group suppresses as unusable-scale', () => {
+  // KIND_TO_GROUPS.time is ['motion']. A profile with no motion tokens yields
+  // an empty candidate set — today's behaviour, and the refactor must keep it.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-motion-'));
+  try {
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src/Thing.tsx'), "const t = { transition: '220ms' };\n");
+    const profile = { styling: { tokenSource: [] }, tokens: {} };
+    const { findings, suppressed } = scanRepo(root, profile, {});
+    assert.deepEqual(findings, []);
+    assert.equal(suppressed.length, 1);
+    assert.equal(suppressed[0].id, 'UX-103');
+    assert.equal(suppressed[0].reason, 'unusable-scale');
+    assert.deepEqual(suppressed[0].groups, ['motion']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
