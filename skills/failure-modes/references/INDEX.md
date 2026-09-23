@@ -75,6 +75,19 @@ UX-074 | forms | low | model | The submit control is labelled for the transport,
 UX-075 | forms | medium | model | A value the user cannot read back is collected only once
 UX-076 | data-display | low | model | Numeric columns rendered in a proportional (non-tabular) numeral style
 UX-077 | data-display | low | model | Timestamp shown as a raw machine format instead of a human one
+UX-078 | data-display | low | model | Figures in one column rendered at whatever precision the source gave
+UX-079 | data-display | medium | model | The unit appears once in the header and never on the values
+UX-080 | data-display | medium | model | Money assembled by string concatenation
+UX-081 | data-display | high | model | A value that was never recorded is drawn as zero
+UX-082 | data-display | medium | model | Clipped text with no way to reach the rest of it
+UX-083 | data-display | medium | model | The chart form does not match the comparison being made
+UX-084 | data-display | high | model | The value axis starts somewhere other than zero, unmarked
+UX-085 | data-display | low | model | Every column sortable, no column sorted
+UX-086 | data-display | medium | model | A proportion shown with neither its count nor its total
+UX-087 | data-display | medium | model | A generated identifier shown where the record has a name
+UX-088 | data-display | low | model | Column widths fixed to the shape of the sample data
+UX-089 | data-display | high | model | The total is computed over a different set than the rows beneath it
+UX-090 | data-display | medium | model | Only the elapsed interval is shown where the exact moment matters
 UX-091 | accessibility | high | hybrid | Icon-only button with no accessible name
 UX-092 | accessibility | high | model | Colour is the only signal distinguishing meaning
 UX-101 | system-consistency | high | scanner | Hard-coded colour literal bypasses the token system
