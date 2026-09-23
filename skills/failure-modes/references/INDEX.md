@@ -61,6 +61,18 @@ UX-060 | state-coverage | high | model | The error state offers no way to retry
 UX-061 | forms | medium | model | Field validation only runs at form submit
 UX-062 | forms | medium | model | Required fields carry no visible marker
 UX-063 | forms | medium | model | Error message states the problem but not the fix
+UX-064 | forms | medium | model | The field's only label is its placeholder
+UX-065 | forms | medium | model | The control does not match the data it collects
+UX-066 | forms | medium | model | The field's requirements appear only after they are broken
+UX-067 | forms | high | model | A long or irreversible submission has no review step
+UX-068 | forms | medium | model | Validation errors are summarised at the top and nowhere else
+UX-069 | forms | high | model | A rejected submission returns the user to empty fields
+UX-070 | forms | low | model | Fields ordered by the record's schema rather than the user's source
+UX-071 | forms | low | model | Optional fields outnumber and surround the required ones
+UX-072 | forms | low | model | Standard fields carry no autofill hint
+UX-073 | forms | medium | model | A multi-screen form never says how far through it the user is
+UX-074 | forms | low | model | The submit control is labelled for the transport, not the outcome
+UX-075 | forms | medium | model | A value the user cannot read back is collected only once
 UX-076 | data-display | low | model | Numeric columns rendered in a proportional (non-tabular) numeral style
 UX-077 | data-display | low | model | Timestamp shown as a raw machine format instead of a human one
 UX-091 | accessibility | high | hybrid | Icon-only button with no accessible name
