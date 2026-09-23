@@ -161,10 +161,14 @@ const KIND_TO_GROUPS = { color: ['color'], length: ['spacing', 'radius', 'type']
 // ("text-[", "rounded-[", "p-[", ...) or a CSS/JS property name
 // ("font-size:", "border-radius:", "padding:", ...) — and, when it
 // recognises one, names the single token group that literal actually
-// belongs to. No recognisable context (the common case for a second value
-// on the same line, e.g. the "16px" in "padding: 12px 16px") means no
-// narrowing: nearestToken falls back to considering spacing, radius and
-// type together, exactly as before.
+// belongs to. A context it does not recognise names no group at all, and
+// the literal is suppressed rather than measured against every scale in
+// turn — see the fail-closed branch in scanRepo. That is what keeps a
+// box-shadow offset from being handed a border-radius token whose value
+// happens to match.
+//
+// A shorthand's later values keep the property's hint: both values in
+// "padding: 12px 16px" are hinted `spacing`, via SHORTHAND_VALUE below.
 const CONTEXT_WINDOW = 30;
 const HINT_GROUPS = { type: ['type'], radius: ['radius'], spacing: ['spacing'] };
 

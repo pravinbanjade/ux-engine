@@ -375,7 +375,25 @@ test('a no-context suppression renders its own sentence with no undefined', () =
     suppressed: [{ id: 'UX-102', reason: 'no-context', count: 69 }],
   });
   const report = renderReport(envelope);
-  assert.match(report, /UX-102 suppressed for 69 length\(s\) whose context names no token group/);
+  assert.match(report, /UX-102 suppressed for 69 length\(s\) whose surrounding code does not say which token group/);
   assert.ok(!report.includes('undefined'), report);
   assert.ok(!report.includes('not a scale'), 'no-context must not borrow the unusable-scale sentence');
+});
+
+test('the no-context sentence does not claim a cause it cannot know', () => {
+  // The entry carries a count and nothing else. Naming shadows and filters
+  // tells a reader whose paddingTop literal was suppressed that the line is
+  // not about them, which is the opposite of what a suppression line is for.
+  const envelope = buildEnvelope({
+    generatedAt: '2026-09-24T00:00:00.000Z',
+    profileHash: 'abc',
+    scope: { kind: 'path', value: 'src/' },
+    findings: [],
+    suppressed: [{ id: 'UX-102', reason: 'no-context', count: 69 }],
+  });
+  const report = renderReport(envelope);
+  for (const claim of ['shadow', 'filter', 'border width']) {
+    assert.ok(!report.toLowerCase().includes(claim), `must not assert "${claim}" as the cause: ${report}`);
+  }
+  assert.match(report, /69/);
 });

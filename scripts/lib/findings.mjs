@@ -186,7 +186,11 @@ export function renderReport(envelope, modes) {
       // unusable-scale entry — that was the only reason at the time. Defaulting
       // keeps an older findings file readable.
       if (s.reason === 'no-context') {
-        out.push(`- ${s.id} suppressed for ${s.count} length(s) whose context names no token group — shadows, filters, border widths and similar have no scale to snap to`);
+        // No cause is named: the entry carries a count and nothing else, and
+        // the scanner does not record which contexts produced it. Listing
+        // likely ones tells a reader whose own literal was suppressed for a
+        // different reason that the line is not about them.
+        out.push(`- ${s.id} suppressed for ${s.count} length(s) whose surrounding code does not say which token group they belong to — no scale was applied, so no substitution was offered`);
       } else {
         out.push(`- ${s.id} suppressed for ${s.groups.join('|')} — ${s.distinctValues} distinct values, not a scale (${s.count} literals)`);
       }
