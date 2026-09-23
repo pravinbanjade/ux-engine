@@ -11,7 +11,9 @@ The control renders in its disabled variant from a condition the user cannot
 observe — an unmet dependency, a missing permission, an incomplete field
 elsewhere on the screen, a record in the wrong status. No adjacent text, no
 description and no message names the condition, and being disabled, the
-control cannot be activated to find out.
+control cannot be activated to find out. A control disabled only for the
+duration of a request it started, carrying a busy indicator of its own, is not
+this finding.
 
 ## Why it fails
 The user is facing a dead end with no diagnosis. They try neighbouring

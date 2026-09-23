@@ -10,7 +10,9 @@ appliesTo: [form, field]
 The failure branch resets the form state, remounts the form, or navigates to a
 route that renders it fresh. What the user typed is gone: the error message
 appears above a blank form, and the values that caused the rejection are no
-longer anywhere on screen.
+longer anywhere on screen. A failure branch that leaves the form mounted with
+its values intact is not this finding, even where a reset call appears
+elsewhere in the file on the success path.
 
 ## Why it fails
 The user must retype everything to correct one thing, and they cannot see what

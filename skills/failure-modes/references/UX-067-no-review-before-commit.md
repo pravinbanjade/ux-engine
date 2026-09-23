@@ -10,7 +10,10 @@ appliesTo: [form, form-footer, stepper]
 The final field of a long form, or of a sequence of steps, leads straight into
 the mutation. There is no screen between the last entry and the commit that
 renders the assembled values together, and where the form spans several steps,
-the earlier steps' answers are not visible from the last one.
+the earlier steps' answers are not visible from the last one. A single form
+whose every value stays on one scrolling surface above the submit control is
+not this finding, however many fields it holds — what this mode looks for is
+values the user can no longer see at the moment they commit.
 
 ## Why it fails
 Nobody remembers what they typed four steps ago. A value mistyped early —

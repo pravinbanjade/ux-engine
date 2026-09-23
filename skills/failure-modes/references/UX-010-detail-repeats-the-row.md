@@ -11,7 +11,9 @@ The detail route renders the same fields the list row already displayed, in
 the same order, with the same formatting. It adds no related records, no
 change history, no fields the row omitted for width, and no actions the row
 did not already offer. The component reads as a single-record rendering of the
-same projection the list used.
+same projection the list used. A detail view that adds any of those — one
+related record, a history, a long-form field the row truncated — is not this
+finding, however much else it repeats.
 
 ## Why it fails
 The user clicked expecting more and paid a navigation round trip — a route
