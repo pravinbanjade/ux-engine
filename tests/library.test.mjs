@@ -252,3 +252,47 @@ test('generic filler outside the Fix section is not rejected', () => {
     [],
   );
 });
+
+import { checkCrossFile, signalSimilarity } from '../scripts/lib/library.mjs';
+
+const modeRec = (id, category, title, signal) => ({
+  filename: `${id}-x.md`,
+  data: { id, category, title, severity: 'medium', detection: 'model', appliesTo: ['table'] },
+  body: `## Signal\n${signal}\n\n## Why it fails\ny\n\n## Fix\nz\n\n## Counter-example — when this is fine\nw\n`,
+});
+
+test('signalSimilarity is 1 for identical text and 0 for disjoint text', () => {
+  assert.equal(signalSimilarity('sortable column header renders', 'sortable column header renders'), 1);
+  assert.equal(signalSimilarity('sortable column header', 'zebra striping rhythm'), 0);
+});
+
+test('signalSimilarity ignores case, punctuation and stop words', () => {
+  assert.equal(signalSimilarity('The sortable column header.', 'sortable column header'), 1);
+});
+
+test('two modes in one category with near-identical signals are rejected', () => {
+  const a = modeRec('UX-004', 'information-architecture', 'First', 'navigation buries the primary task three levels deep behind menus');
+  const b = modeRec('UX-005', 'information-architecture', 'Second', 'navigation buries the primary task three levels deep behind menus');
+  assert.ok(checkCrossFile([a, b]).some((e) => /similar/.test(e)));
+});
+
+test('near-identical signals in different categories are not compared', () => {
+  // Categories ask different questions of the same code. A forms mode and a
+  // data-display mode can share wording about a table without either being
+  // redundant; only a same-category collision means one of them is surplus.
+  const a = modeRec('UX-004', 'information-architecture', 'First', 'navigation buries the primary task three levels deep behind menus');
+  const b = modeRec('UX-061', 'forms', 'Second', 'navigation buries the primary task three levels deep behind menus');
+  assert.deepEqual(checkCrossFile([a, b]).filter((e) => /similar/.test(e)), []);
+});
+
+test('two modes sharing a title are rejected, case-insensitively', () => {
+  const a = modeRec('UX-004', 'information-architecture', 'Same Title', 'alpha beta gamma delta');
+  const b = modeRec('UX-005', 'information-architecture', 'same title', 'epsilon zeta eta theta');
+  assert.ok(checkCrossFile([a, b]).some((e) => /title/i.test(e)));
+});
+
+test('a duplicate id is rejected', () => {
+  const a = modeRec('UX-004', 'information-architecture', 'First', 'alpha beta gamma delta');
+  const b = modeRec('UX-004', 'information-architecture', 'Second', 'epsilon zeta eta theta');
+  assert.ok(checkCrossFile([a, b]).some((e) => /duplicate id/.test(e)));
+});

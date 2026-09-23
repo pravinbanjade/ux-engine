@@ -71,6 +71,77 @@ export function sectionBodies(body) {
   return out;
 }
 
+const STOP_WORDS = new Set(
+  ('a an the and or of to in on is are it its that this with for as not no by at from be been has '
+  + 'have which when where what who use used using there their they them').split(' '),
+);
+
+function contentWords(text) {
+  return new Set(
+    text.toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !STOP_WORDS.has(w)),
+  );
+}
+
+// Jaccard over content words. Two modes that describe the same code shape in
+// the same category are one mode with two numbers, and at 120 entries that is
+// the failure this catalog is most likely to grow.
+export function signalSimilarity(a, b) {
+  const x = contentWords(a);
+  const y = contentWords(b);
+  if (x.size === 0 && y.size === 0) return 1;
+  const union = new Set([...x, ...y]);
+  if (union.size === 0) return 1;
+  let shared = 0;
+  for (const w of x) if (y.has(w)) shared++;
+  return shared / union.size;
+}
+
+// Fixed, not a dial. A new mode that trips this against an existing one is
+// saying something the catalog already says; the answer is to rewrite or cut
+// the mode, never to lower the number.
+export const SIGNAL_SIMILARITY_LIMIT = 0.7;
+
+export function checkCrossFile(modes) {
+  const errors = [];
+
+  const byId = new Map();
+  for (const m of modes) {
+    if (byId.has(m.data.id)) errors.push(`${m.filename}: duplicate id ${m.data.id} (also ${byId.get(m.data.id)})`);
+    else byId.set(m.data.id, m.filename);
+  }
+
+  const byTitle = new Map();
+  for (const m of modes) {
+    const key = String(m.data.title ?? '').trim().toLowerCase();
+    if (!key) continue;
+    if (byTitle.has(key)) errors.push(`${m.filename}: title duplicates ${byTitle.get(key)}`);
+    else byTitle.set(key, m.filename);
+  }
+
+  const signals = modes.map((m) => ({
+    filename: m.filename,
+    category: m.data.category,
+    signal: sectionBodies(m.body)['## Signal'] ?? '',
+  }));
+  for (let i = 0; i < signals.length; i++) {
+    for (let j = i + 1; j < signals.length; j++) {
+      if (signals[i].category !== signals[j].category) continue;
+      const score = signalSimilarity(signals[i].signal, signals[j].signal);
+      if (score >= SIGNAL_SIMILARITY_LIMIT) {
+        errors.push(
+          `${signals[i].filename}: Signal is ${score.toFixed(2)} similar to ${signals[j].filename} `
+          + `(limit ${SIGNAL_SIMILARITY_LIMIT}) — rewrite or cut one, do not lower the limit`,
+        );
+      }
+    }
+  }
+
+  return errors;
+}
+
 const REQUIRED_SECTIONS = [
   '## Signal',
   '## Why it fails',

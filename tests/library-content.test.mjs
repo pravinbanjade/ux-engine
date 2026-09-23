@@ -104,3 +104,9 @@ test('every mode ID sits in its category range', () => {
     assert.ok(n >= lo && n <= hi, `${m.filename}: ${m.data.id} outside ${m.data.category} ${lo}-${hi}`);
   }
 });
+
+import { checkCrossFile } from '../scripts/lib/library.mjs';
+
+test('no two modes duplicate an id, a title, or a signal', () => {
+  assert.deepEqual(checkCrossFile(modes), []);
+});
