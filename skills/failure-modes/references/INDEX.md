@@ -47,6 +47,17 @@ UX-046 | state-coverage | high | model | List or table has no design for zero re
 UX-047 | state-coverage | high | model | Async content has no loading state
 UX-048 | state-coverage | high | model | Failed request has no visible error state
 UX-049 | state-coverage | medium | model | Layout only designed for the demo-data row count
+UX-050 | state-coverage | high | model | One failed source among several takes the whole screen with it
+UX-051 | state-coverage | medium | model | The loading state is shaped nothing like the content that replaces it
+UX-052 | state-coverage | medium | model | A change in flight looks exactly like no change at all
+UX-053 | state-coverage | medium | model | A completed write produces no visible acknowledgement
+UX-054 | state-coverage | medium | model | Losing the connection is reported as a server error
+UX-055 | state-coverage | high | model | A user without access is told there is nothing here
+UX-056 | state-coverage | medium | model | Cached figures rendered as though they were current
+UX-057 | state-coverage | medium | model | Known progress reported as an indeterminate spinner
+UX-058 | state-coverage | medium | model | A control is disabled and nothing says what would enable it
+UX-059 | state-coverage | medium | model | A feature never set up renders the same message as one with no data
+UX-060 | state-coverage | high | model | The error state offers no way to retry
 UX-061 | forms | medium | model | Field validation only runs at form submit
 UX-062 | forms | medium | model | Required fields carry no visible marker
 UX-063 | forms | medium | model | Error message states the problem but not the fix
