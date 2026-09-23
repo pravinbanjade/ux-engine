@@ -262,8 +262,11 @@ test('scanRepo --path requires a path-segment boundary, not just a string prefix
   try {
     mkdirSync(join(root, 'src/components'), { recursive: true });
     mkdirSync(join(root, 'src/components-legacy'), { recursive: true });
-    writeFileSync(join(root, 'src/components/Foo.tsx'), "const p = '17px';\n");
-    writeFileSync(join(root, 'src/components-legacy/Bar.tsx'), "const p = '19px';\n");
+    // padding: gives these a spacing hint. This test's subject is path
+    // scoping; an unhinted length is now suppressed and would produce no
+    // finding for either file, testing nothing.
+    writeFileSync(join(root, 'src/components/Foo.tsx'), "const p = { padding: '17px' };\n");
+    writeFileSync(join(root, 'src/components-legacy/Bar.tsx'), "const p = { padding: '19px' };\n");
 
     const profile = {
       styling: { tokenSource: [] },
@@ -397,19 +400,21 @@ test('scanRepo narrows a "min-width" property literal to the spacing token group
   });
 });
 
-test('scanRepo keeps searching all three length groups when the context has no recognisable hint', () => {
+test('scanRepo offers nothing for a length whose context has no recognisable hint', () => {
   withTempRoot((root) => {
     // "value:" is not a font-size, radius, or spacing prefix/property, so no
-    // hint should fire and today's behaviour — search spacing, radius and
-    // type together — applies: the exact match anywhere among them wins.
+    // hint fires. This used to search spacing, radius and type together and
+    // hand back the exact match from whichever group happened to hold one —
+    // which is how a box-shadow offset was offered a border-radius token.
+    // An unidentified context now gets no group and no suggestion.
     writeFileSync(join(root, 'Foo.tsx'), 'const raw = "value:10px";\n');
     const profile = {
       styling: { tokenSource: [] },
       tokens: { spacing: { '--space-3': '10px' }, type: { '--text-sm': '11px' }, radius: { '--radius': '40px' } },
     };
-    const { findings } = scanRepo(root, profile, {});
-    const finding = findings.find((f) => f.value === '10px');
-    assert.equal(finding.nearestToken, '--space-3');
+    const { findings, suppressed } = scanRepo(root, profile, {});
+    assert.deepEqual(findings.filter((f) => f.value === '10px'), []);
+    assert.ok(suppressed.some((x) => x.id === 'UX-102' && x.reason === 'no-context'));
   });
 });
 
@@ -438,7 +443,11 @@ test('scanRepo continues scanning other files when one file has a read error, co
   // skipped list is populated while findings still come back.
   const root = mkdtempSync(join(tmpdir(), 'ux-engine-scan-skip-error-'));
   try {
-    writeFileSync(join(root, 'good.tsx'), 'const c = "17px";\n');
+    // padding: gives this a spacing hint. The subject here is that a bad
+    // file does not abort the scan; an unhinted length would now be
+    // suppressed and the "good file still reported" assertion would be
+    // testing the hint rule instead.
+    writeFileSync(join(root, 'good.tsx'), 'const c = { padding: "17px" };\n');
     // Create a file with no read permissions that will cause a read error
     writeFileSync(join(root, 'bad.tsx'), 'bad content\n');
     // This test may not work if running as root; skip the permission check in that case
@@ -572,7 +581,11 @@ test('a repo whose tokens were never transcribed is suppressed, not silent', () 
   const { findings, suppressed } = scanRepo(root, buildProfile(root), {});
   assert.deepEqual(findings.filter((f) => f.file === 'src/components/Offender.tsx'), []);
   assert.ok(suppressed.length > 0, 'the run must say why it found nothing');
-  assert.ok(suppressed.every((s) => s.distinctValues === 0));
+  // distinctValues belongs to unusable-scale entries. A no-context entry has
+  // no group and so no distinct count, which is the point of it.
+  const unusable = suppressed.filter((s) => s.reason === 'unusable-scale');
+  assert.ok(unusable.length > 0, 'the untranscribed tokens must be reported as an unusable scale');
+  assert.ok(unusable.every((s) => s.distinctValues === 0));
 });
 
 test('a translucent literal never matches an opaque token', () => {
@@ -694,6 +707,128 @@ test('a duration against an empty motion group suppresses as unusable-scale', ()
     assert.equal(suppressed[0].id, 'UX-103');
     assert.equal(suppressed[0].reason, 'unusable-scale');
     assert.deepEqual(suppressed[0].groups, ['motion']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a box-shadow offset equal to a radius token produces no finding', () => {
+  // The 2026-09-22 restyle dogfood applied `--y-r` to a box-shadow offset
+  // because 10px matched a 10px radius exactly. A shadow offset is not a
+  // radius; the scanner must offer nothing rather than the nearest anything.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-shadow-'));
+  try {
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src/Card.tsx'), "const s = { boxShadow: '0 10px 40px -10px rgba(0,0,0,0.3)' };\n");
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { radius: { '--r-sm': '6px', '--r': '10px', '--r-lg': '14px', '--r-xl': '20px' } },
+    };
+    const { findings, suppressed } = scanRepo(root, profile, {});
+    assert.deepEqual(findings.filter((f) => f.kind === 'length'), []);
+    // Not suppressed.length: the rgba() in the fixture is a colour with no
+    // colour tokens, so it contributes its own unusable-scale entry.
+    const lengthEntry = suppressed.find((x) => x.id === 'UX-102');
+    assert.ok(lengthEntry, 'the shadow offsets must be reported as suppressed');
+    assert.equal(lengthEntry.reason, 'no-context');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a border width produces no finding', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-border-'));
+  try {
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src/Dot.tsx'), '<div className="border-[2px]" />\n');
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { radius: { '--a': '2px', '--b': '6px', '--c': '10px', '--d': '14px' } },
+    };
+    const { findings } = scanRepo(root, profile, {});
+    assert.deepEqual(findings.filter((f) => f.kind === 'length'), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a hinted length against an unusable scale suppresses as unusable-scale, not no-context', () => {
+  // Both reasons are live at once here. The context WAS identified; the scale
+  // was the problem, and the report should say so.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-both-'));
+  try {
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src/Thing.tsx'), "const s = { padding: '17px' };\n");
+    const profile = { styling: { tokenSource: [] }, tokens: { spacing: { '--a': '8px', '--b': '16px' } } };
+    const { suppressed } = scanRepo(root, profile, {});
+    assert.equal(suppressed.length, 1);
+    assert.equal(suppressed[0].reason, 'unusable-scale');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('one hinted and one unhinted length in a file yield a finding and a suppression', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-mixed-'));
+  try {
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(
+      join(root, 'src/Mixed.tsx'),
+      "const a = { padding: '17px' };\nconst b = { boxShadow: '0 11px 0 rgba(0,0,0,0.2)' };\n",
+    );
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { spacing: { '--s1': '4px', '--s2': '8px', '--s3': '16px', '--s4': '24px' } },
+    };
+    const { findings, suppressed } = scanRepo(root, profile, {});
+    const lengths = findings.filter((f) => f.kind === 'length');
+    assert.equal(lengths.length, 1);
+    assert.equal(lengths[0].line, 1);
+    const lengthEntry = suppressed.find((x) => x.id === 'UX-102');
+    assert.ok(lengthEntry);
+    assert.equal(lengthEntry.reason, 'no-context');
+    assert.equal(lengthEntry.count, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('colours and durations still match their group with no hint', () => {
+  // The obvious wrong implementation fails closed on a null hint for every
+  // kind, which silently disables UX-101 and UX-103 altogether.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-kinds-'));
+  try {
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src/K.tsx'), "const c = '#3b7d4f';\nconst t = '220ms';\n");
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: {
+        color: { '--c1': '#3b7d4e', '--c2': '#ffffff', '--c3': '#000000', '--c4': '#888888' },
+        motion: { '--m1': '150ms', '--m2': '200ms', '--m3': '300ms', '--m4': '500ms' },
+      },
+    };
+    const { findings } = scanRepo(root, profile, {});
+    assert.deepEqual(findings.map((f) => f.id).sort(), ['UX-101', 'UX-103']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('no-context suppressions tally once with a count across files', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-tally-'));
+  try {
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src/A.tsx'), "const a = { boxShadow: '0 11px 0 #000' };\n");
+    writeFileSync(join(root, 'src/B.tsx'), "const b = { boxShadow: '0 13px 0 #000' };\n");
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { radius: { '--a': '2px', '--b': '6px', '--c': '10px', '--d': '14px' } },
+    };
+    const { suppressed } = scanRepo(root, profile, {});
+    const lengthEntry = suppressed.find((x) => x.id === 'UX-102');
+    assert.ok(lengthEntry);
+    assert.equal(lengthEntry.reason, 'no-context');
+    assert.equal(lengthEntry.count, 2);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

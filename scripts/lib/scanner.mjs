@@ -358,8 +358,22 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
     const startLength = findings.length;
     try {
       for (const literal of scanLiterals(text)) {
-        const groups = (literal.kind === 'length' && literal.hint && HINT_GROUPS[literal.hint])
-          || KIND_TO_GROUPS[literal.kind];
+        // A length whose context we could not identify gets no group at all.
+        // The old `|| KIND_TO_GROUPS[literal.kind]` matched it against every
+        // length scale at once, so a box-shadow offset of 10px was offered a
+        // 10px border-radius token: an exact numeric match and a meaningless
+        // one. Colours and durations have no hint concept and one group each,
+        // so they keep taking the map.
+        const groups = literal.kind === 'length'
+          ? (HINT_GROUPS[literal.hint] ?? null)
+          : KIND_TO_GROUPS[literal.kind];
+
+        if (groups === null) {
+          const tally = suppressed.get('UX-102|no-context');
+          if (tally) tally.count += 1;
+          else suppressed.set('UX-102|no-context', { id: 'UX-102', reason: 'no-context', count: 1 });
+          continue;
+        }
         const candidates = {};
         for (const group of groups) Object.assign(candidates, profile.tokens[group] ?? {});
         // A mode whose advice is "snap to the nearest step" has nothing to

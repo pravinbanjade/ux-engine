@@ -365,3 +365,17 @@ test('a suppression entry written before reason existed still renders', () => {
   assert.match(report, /UX-103 suppressed for motion — 0 distinct values, not a scale \(13 literals\)/);
   assert.ok(!report.includes('undefined'), report);
 });
+
+test('a no-context suppression renders its own sentence with no undefined', () => {
+  const envelope = buildEnvelope({
+    generatedAt: '2026-09-24T00:00:00.000Z',
+    profileHash: 'abc',
+    scope: { kind: 'path', value: 'src/' },
+    findings: [],
+    suppressed: [{ id: 'UX-102', reason: 'no-context', count: 69 }],
+  });
+  const report = renderReport(envelope);
+  assert.match(report, /UX-102 suppressed for 69 length\(s\) whose context names no token group/);
+  assert.ok(!report.includes('undefined'), report);
+  assert.ok(!report.includes('not a scale'), 'no-context must not borrow the unusable-scale sentence');
+});
