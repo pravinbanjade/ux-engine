@@ -30,6 +30,19 @@ UX-029 | interaction | medium | model | Navigation built as a button, or mutatio
 UX-030 | interaction | medium | model | The action names the verb but not what it acts on
 UX-031 | visual-hierarchy | medium | model | No single element reads as the entry point
 UX-032 | visual-hierarchy | medium | model | Identical spacing between related and unrelated elements
+UX-033 | visual-hierarchy | medium | model | Four or more type treatments with no dominant one
+UX-034 | visual-hierarchy | medium | model | Accent colour spent on elements that carry no state
+UX-035 | visual-hierarchy | medium | model | The headline figure is rendered at body size
+UX-036 | visual-hierarchy | low | model | Every group wrapped in its own bordered container
+UX-037 | visual-hierarchy | low | model | One block aligned to several different axes
+UX-038 | visual-hierarchy | low | model | Running prose stretched to the full container width
+UX-039 | visual-hierarchy | medium | model | Two or more controls claim the primary variant in one view
+UX-040 | visual-hierarchy | medium | model | Section headings render identically to the content below them
+UX-041 | visual-hierarchy | medium | model | A dense table gives the eye nothing to track a row by
+UX-042 | visual-hierarchy | low | model | Icons drawn heavier than the labels they annotate
+UX-043 | visual-hierarchy | low | model | Content sits flush against the edge of its container
+UX-044 | visual-hierarchy | low | model | The screen opens straight into content with no header block
+UX-045 | visual-hierarchy | low | model | Several emphasis devices stacked on one element
 UX-046 | state-coverage | high | model | List or table has no design for zero results
 UX-047 | state-coverage | high | model | Async content has no loading state
 UX-048 | state-coverage | high | model | Failed request has no visible error state
