@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { loadModes, validateModeFile, checkIndex, CATEGORIES } from '../scripts/lib/library.mjs';
+import { loadModes, validateModeFile, checkIndex, CATEGORIES, CATEGORY_RANGES } from '../scripts/lib/library.mjs';
 
 const dir = fileURLToPath(new URL('../skills/failure-modes/references', import.meta.url));
 const modes = loadModes(dir);
@@ -18,19 +18,28 @@ test('the index is in sync', () => {
   assert.deepEqual(checkIndex(modes, index), []);
 });
 
-test('at least 20 modes are seeded', () => {
-  assert.ok(modes.length >= 20, `only ${modes.length} modes`);
-});
-
-test('every category has at least two modes', () => {
-  for (const category of CATEGORIES) {
-    const count = modes.filter((m) => m.data.category === category).length;
-    assert.ok(count >= 2, `category ${category} has ${count} mode(s)`);
+test('the catalog is complete: IDs 001-120, each exactly once', () => {
+  const nums = modes.map((m) => Number(m.data.id.slice(3))).sort((a, b) => a - b);
+  assert.equal(nums.length, 120, `catalog holds ${nums.length} modes`);
+  for (let n = 1; n <= 120; n++) {
+    assert.equal(nums[n - 1], n, `UX-${String(n).padStart(3, '0')} is missing or duplicated`);
   }
 });
 
-test('all three detection kinds are represented', () => {
-  for (const kind of ['model', 'scanner', 'hybrid']) {
+test('every category fills its declared range exactly', () => {
+  for (const category of CATEGORIES) {
+    const [lo, hi] = CATEGORY_RANGES[category];
+    const found = modes
+      .filter((m) => m.data.category === category)
+      .map((m) => Number(m.data.id.slice(3)))
+      .sort((a, b) => a - b);
+    const expected = Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+    assert.deepEqual(found, expected, `${category} does not fill ${lo}-${hi}`);
+  }
+});
+
+test('all four detection kinds are represented', () => {
+  for (const kind of ['model', 'scanner', 'hybrid', 'conformance']) {
     assert.ok(modes.some((m) => m.data.detection === kind), `no ${kind} mode`);
   }
 });
@@ -102,7 +111,7 @@ test('the enforcer names every conformance mode', () => {
   }
 });
 
-import { APPLIES_TO, CATEGORY_RANGES } from '../scripts/lib/library.mjs';
+import { APPLIES_TO } from '../scripts/lib/library.mjs';
 
 test('every appliesTo value in the catalog is in the vocabulary', () => {
   for (const m of modes) {
