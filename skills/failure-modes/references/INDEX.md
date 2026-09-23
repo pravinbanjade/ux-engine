@@ -111,3 +111,10 @@ UX-110 | system-consistency | low | model | A screen composes its own page struc
 UX-111 | conformance | high | conformance | Approved state has no branch in the implementation
 UX-112 | conformance | medium | conformance | Implementation contradicts the approved hierarchy
 UX-113 | conformance | low | conformance | Component used that was not in the approved inventory
+UX-114 | conformance | high | conformance | A region in the approved layout has no counterpart in the code
+UX-115 | conformance | medium | conformance | The implementation renders a region the wireframe never contained
+UX-116 | conformance | high | conformance | The approved primary action is not the dominant one on screen
+UX-117 | conformance | low | conformance | A component recorded as reused was written fresh instead
+UX-118 | conformance | medium | conformance | The implementation's density contradicts the recorded audience
+UX-119 | conformance | high | conformance | The recorded scale is not the scale the code handles
+UX-120 | conformance | high | conformance | The recorded failure has no branch that detects it
