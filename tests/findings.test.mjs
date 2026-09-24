@@ -397,3 +397,60 @@ test('the no-context sentence does not claim a cause it cannot know', () => {
   }
   assert.match(report, /69/);
 });
+
+test('a suppression that carries literals shows them under its line', () => {
+  // The line above it says the scale is too thin. This is the first thing in
+  // the report a reader can act on: the values their own code already uses,
+  // which are the raw material for the scale the line is asking for.
+  const envelope = buildEnvelope({
+    findings: [],
+    profileHash: 'ab',
+    scope: { kind: 'path', value: '.' },
+    suppressed: [{
+      id: 'UX-102',
+      reason: 'unusable-scale',
+      groups: ['spacing'],
+      distinctValues: 2,
+      count: 321,
+      distinctLiterals: 19,
+      values: [{ value: '24px', count: 22 }, { value: '1rem', count: 18 }, { value: '8px', count: 1 }],
+    }],
+  });
+  const report = renderReport(envelope, modes);
+  assert.match(report, /Most used: `24px` \(×22\), `1rem` \(×18\), `8px` \(×1\) — 16 more not shown/);
+  assert.match(report, /raw material for a spacing scale/);
+});
+
+test('a suppression showing every literal it found says nothing about more', () => {
+  const envelope = buildEnvelope({
+    findings: [],
+    profileHash: 'ab',
+    scope: { kind: 'path', value: '.' },
+    suppressed: [{
+      id: 'UX-102',
+      reason: 'unusable-scale',
+      groups: ['spacing'],
+      distinctValues: 2,
+      count: 3,
+      distinctLiterals: 2,
+      values: [{ value: '24px', count: 2 }, { value: '8px', count: 1 }],
+    }],
+  });
+  assert.ok(!/more not shown/.test(renderReport(envelope, modes)));
+});
+
+test('a suppression written before literals were kept still renders', () => {
+  // An older .ux-engine/findings.json has no `values` key. Reading one must
+  // produce the line it always produced, not a report with the word
+  // "undefined" in it.
+  const envelope = buildEnvelope({
+    findings: [],
+    profileHash: 'ab',
+    scope: { kind: 'path', value: '.' },
+    suppressed: [{ id: 'UX-102', reason: 'unusable-scale', groups: ['spacing'], distinctValues: 2, count: 775 }],
+  });
+  const report = renderReport(envelope, modes);
+  assert.match(report, /UX-102 suppressed for spacing — 2 distinct values, not a scale \(775 literals\)/);
+  assert.ok(!/Most used/.test(report));
+  assert.ok(!/undefined/.test(report));
+});

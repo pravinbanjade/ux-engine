@@ -192,7 +192,19 @@ export function renderReport(envelope, modes) {
         // different reason that the line is not about them.
         out.push(`- ${s.id} suppressed for ${s.count} length(s) whose surrounding code does not say which token group they belong to — no scale was applied, so no substitution was offered`);
       } else {
-        out.push(`- ${s.id} suppressed for ${s.groups.join('|')} — ${s.distinctValues} distinct values, not a scale (${s.count} literals)`);
+        const group = s.groups.join('|');
+        out.push(`- ${s.id} suppressed for ${group} — ${s.distinctValues} distinct values, not a scale (${s.count} literals)`);
+        // The line above states a fact the reader can do nothing with. These
+        // two say what to do about it: here are the values your own code
+        // already uses, in order of how often, which is what a scale gets
+        // built out of. An entry written before the scanner kept them has no
+        // `values` and renders exactly as it always did.
+        if (s.values?.length) {
+          const shown = s.values.map((v) => `\`${v.value}\` (×${v.count})`).join(', ');
+          const hidden = (s.distinctLiterals ?? s.values.length) - s.values.length;
+          out.push(`  - Most used: ${shown}${hidden > 0 ? ` — ${hidden} more not shown` : ''}`);
+          out.push(`  - These are the raw material for a ${group} scale; the remedy is tokens, not a quieter report.`);
+        }
       }
     }
     out.push('');

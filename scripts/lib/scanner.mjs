@@ -174,6 +174,32 @@ const PATTERNS = [
 const KIND_TO_ID = { color: 'UX-101', length: 'UX-102', time: 'UX-103' };
 const KIND_TO_GROUPS = { color: ['color'], length: ['spacing', 'radius', 'type'], time: ['motion'] };
 
+// How many of an unusable group's own literals a suppression carries. A
+// report is read, not queried: twelve rows is enough to see the shape of the
+// scale a codebase is already using by hand, and `distinctLiterals` tells a
+// reader the list was cut rather than letting them mistake it for the whole
+// set.
+const SUPPRESSION_SAMPLE = 12;
+
+// A suppression that says "your spacing group holds two values, not a scale"
+// and stops there withholds the only evidence of what a real scale would
+// contain — and the scanner has just read every one of those literals. Turn
+// the tally into the sample the report shows: most used first, ties broken
+// by length ascending so the tail of the list still reads as a scale rather
+// than an arbitrary order. A `no-context` entry has no literals map and
+// passes through untouched: those lengths belong to no group, so listing
+// them under a group heading would assert the membership the scanner
+// deliberately refused to guess.
+function summariseSuppression(entry) {
+  const { literals, ...rest } = entry;
+  if (!literals) return rest;
+  const px = (value) => parseScalar(value)?.value ?? Number.POSITIVE_INFINITY;
+  const values = [...literals.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => (b.count - a.count) || (px(a.value) - px(b.value)) || a.value.localeCompare(b.value));
+  return { ...rest, distinctLiterals: values.length, values: values.slice(0, SUPPRESSION_SAMPLE) };
+}
+
 // A 'length' literal's own kind never says whether it's meant to be a font
 // size, a border radius, or a spacing/sizing value — those are three
 // distinct token groups, and picking whichever token is merely closest in
@@ -454,17 +480,25 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
         // measured against a scale that is not there.
         if (!isUsableScale(candidates)) {
           const id = KIND_TO_ID[literal.kind];
-          const tally = suppressed.get(`${id}|${groups.join('|')}`);
+          let tally = suppressed.get(`${id}|${groups.join('|')}`);
           if (tally) tally.count += 1;
           else {
-            suppressed.set(`${id}|${groups.join('|')}`, {
+            tally = {
               id,
               reason: 'unusable-scale',
               groups: [...groups],
               distinctValues: new Set(Object.values(candidates)).size,
               count: 1,
-            });
+              // Keyed by the literal exactly as written. `16px` and `1rem`
+              // are the same length and stay separate rows on purpose: a
+              // repository writing both is saying something about itself,
+              // and normalising them into one row would hide it behind a
+              // number that looks tidier than the code is.
+              literals: new Map(),
+            };
+            suppressed.set(`${id}|${groups.join('|')}`, tally);
           }
+          tally.literals.set(literal.value, (tally.literals.get(literal.value) ?? 0) + 1);
           continue;
         }
         const hit = nearestToken(literal, candidates, thresholds);
@@ -485,5 +519,5 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
       skipped.push({ file, reason: `parse-error:${errorType}` });
     }
   }
-  return { findings, skipped, suppressed: [...suppressed.values()] };
+  return { findings, skipped, suppressed: [...suppressed.values()].map(summariseSuppression) };
 }
