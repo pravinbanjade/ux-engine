@@ -34,6 +34,29 @@ const NUMBER = String.raw`[+-]?(?:\d+\.\d+|\.\d+|\d+)`;
 const NOT_BEFORE = String.raw`(?<![\w.-])`;
 const NOT_AFTER = String.raw`(?!\w)`;
 
+// Tailwind's arbitrary-value syntax forbids whitespace — a space would end
+// the class name — so its arithmetic is written glued: `w-[calc(100%-16px)]`,
+// `h-[calc(100vh-16px)]`. That minus is a subtraction operator, but the
+// boundaries above have no way to see it as one. `100%-16px` yields the
+// negative length `-16px`, because '%' passes NOT_BEFORE and the sign is
+// then taken as part of the number; `100vh-16px` yields nothing at all,
+// because NOT_BEFORE refuses to start a match after a hyphen. Both outcomes
+// make the arithmetic-wrapper hint rule inert for the only spelling this
+// syntax permits.
+//
+// Rather than loosen the boundaries — which would have to distinguish an
+// operator from a sign by lookbehind at every call site — normalise the
+// operator out of the line before lexing, the same move scanLiterals
+// already makes for var() references. An operator sits between the end of a
+// value (a number, with or without its unit, or '%' or ')') and the start of
+// another number. A sign never does: a real negative value follows a space,
+// '(', ',', ':' or '[', which is why `margin: 0 -16px` and
+// `translate(-50%, -16px)` are untouched. The '{0,4}' covers the unit
+// letters — px, rem, vh, dvmin — without reaching back far enough to read a
+// hyphen-joined class name like `p-2em` as arithmetic, since no digit
+// precedes its 'p'.
+const ARITHMETIC_OPERATOR = /(?<=\d[a-z]{0,4}|[%)])[-+](?=[.\d])/g;
+
 // Hex colours: exactly 3, 4, 6 or 8 hex digits. The previous {3,8} also
 // admitted 5 and 7, which are not valid CSS hex lengths at all. The
 // alternation is ordered longest-first so an 8-digit code is read as one
@@ -302,7 +325,14 @@ function scanLiterals(text) {
     // Blank the reference rather than delete it: every column reported
     // below is an offset into the real line, and deleting text would also
     // let two unrelated fragments abut and manufacture a match.
-    const line = raw.replace(/var\(--[A-Za-z0-9_-]+\)/g, (ref) => ' '.repeat(ref.length));
+    // One character replaced by one character, in both passes, so every
+    // column reported below is still an offset into the line as written.
+    // Order matters: the operator rule reads the ')' that closes a var()
+    // reference as the end of a value, so it has to run while that ')' is
+    // still there — `calc(var(--r)-1px)` subtracts from a token.
+    const line = raw
+      .replace(ARITHMETIC_OPERATOR, ' ')
+      .replace(/var\(--[A-Za-z0-9_-]+\)/g, (ref) => ' '.repeat(ref.length));
     for (const { kind, re, validate } of PATTERNS) {
       re.lastIndex = 0;
       let m;

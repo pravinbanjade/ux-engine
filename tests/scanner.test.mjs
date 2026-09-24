@@ -984,37 +984,107 @@ test('an arithmetic wrapper inside a Tailwind arbitrary value carries the hint',
     ].join('\n'));
     const { findings, suppressed } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
     // One finding, from the min() line. The `h-[calc(100vh-16px)]` line
-    // contributes nothing at all — and not because of the viewport rule:
-    // with no space around the minus, the literal scanner's NOT_BEFORE
-    // guard rejects both `-16px` (preceded by `h`) and `16px` (preceded by
-    // `-`), so that expression holds no literal to hint in the first place.
-    // It is fail-closed one step earlier than the hint table.
+    // contributes a suppression instead: its operand now lexes — the
+    // operator rule sees the minus for what it is — and the viewport rule
+    // then refuses it a hint. Until that rule landed this expression held no
+    // literal at all, and the refusal happened one step earlier, by
+    // accident, in the lexer.
     assert.equal(findings.length, 1);
     assert.equal(findings[0].value, '16px');
     assert.equal(findings[0].nearestToken, '--s2', 'the bracket wrapper did not carry the spacing hint');
-    assert.equal(suppressed.length, 0);
+    assert.deepEqual(suppressed, [{ id: 'UX-102', reason: 'no-context', count: 1 }]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("Tailwind's spaceless subtraction still lexes its operand as a negative length", () => {
-  // KNOWN GAP, pinned deliberately so it is not mistaken for the wrapper
-  // rule failing. In `w-[calc(100%-16px)]` there is no whitespace around the
-  // minus, so the literal scanner reads `-16px` — a negative length — rather
-  // than the operator-plus-operand it is. The hint reaches it correctly; no
-  // positive spacing token can match it, so nothing is offered. That is
-  // fail-closed and harmless, but it does make the wrapper rule inert for
-  // this spelling. Fixing it means changing NOT_BEFORE/NUMBER, which every
-  // colour and duration pattern shares, so it belongs to its own cycle.
-  // When that lands, this test should flip to expect '16px' and '--s2'.
+test("Tailwind's spaceless subtraction lexes its operand as a positive length", () => {
+  // Tailwind's arbitrary values forbid whitespace, so `w-[calc(100%-16px)]`
+  // is how a gutter is actually written — and the minus is an operator, not
+  // a sign. Reading it as the negative length `-16px` made the wrapper rule
+  // inert for the only spelling this syntax permits: no positive spacing
+  // token can ever match a negative literal, so the hint arrived and had
+  // nothing to land on.
   const root = mkdtempSync(join(tmpdir(), 'ux-engine-tw-neg-'));
   try {
     writeFileSync(join(root, 'a.tsx'), ['const a = <div className="w-[calc(100%-16px)]" />;', ''].join('\n'));
     const { findings } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
     assert.equal(findings.length, 1);
-    assert.equal(findings[0].value, '-16px');
-    assert.equal(findings[0].nearestToken, null);
+    assert.equal(findings[0].value, '16px');
+    assert.equal(findings[0].nearestToken, '--s2');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('spaceless viewport arithmetic lexes its operand and still gets no hint', () => {
+  // The other half of the same spelling. Before the operator rule these
+  // expressions produced no literal at all — `-16px` was rejected after the
+  // `h`, and `16px` was rejected after the `-` — so the viewport rule this
+  // repository's own code was written for had never once run against it.
+  // Now the operand lexes, reaches the hint table, and is refused there,
+  // which is where the refusal belongs: a header height subtracted from the
+  // viewport is layout arithmetic, not a step on the spacing scale.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-tw-viewport-'));
+  try {
+    writeFileSync(join(root, 'a.tsx'), [
+      'const a = <div className="h-[calc(100vh-16px)]" />;',
+      'const b = <div className="max-w-[calc(100vw-16px)]" />;',
+      '',
+    ].join('\n'));
+    const { findings, suppressed } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
+    assert.equal(findings.length, 0, 'a viewport-relative length was offered a token');
+    const noContext = suppressed.find((s) => s.id === 'UX-102' && s.reason === 'no-context');
+    assert.equal(noContext.count, 2);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a genuine negative length still lexes as negative', () => {
+  // The operator rule must not swallow real negative values. A sign sits
+  // after a space, '(', ',', ':' or '['; an operator sits between the end of
+  // one value and the start of another. These two lines are the shapes a
+  // negative margin and a centring transform actually take.
+  const found = findLiterals([
+    'margin: 0 -16px;',
+    'transform: translate(-50%, -16px);',
+    '',
+  ].join('\n'));
+  assert.deepEqual(found, [
+    { line: 1, value: '-16px', kind: 'length' },
+    { line: 2, value: '-16px', kind: 'length' },
+  ]);
+});
+
+test('normalising an operator leaves every column pointing at the real literal', () => {
+  // The operator is replaced by a space, one character for one, precisely so
+  // the offsets reported downstream stay offsets into the line as written.
+  // A reader who opens the file at the reported column has to land on the
+  // literal, not one character to either side of it.
+  const line = 'const a = <div className="w-[calc(100%-16px)]" />;';
+  const found = findLiteralsAt(`${line}\n`);
+  assert.deepEqual(found, [{ line: 1, column: line.indexOf('16px') + 1, value: '16px', kind: 'length' }]);
+});
+
+test('a hyphen between two numbers invents no literal', () => {
+  // The rule rewrites a hyphen only when a number starts right after it, so
+  // a date and a hyphen-joined class name are both left alone — and neither
+  // holds a unit for a number to attach to, so neither may produce a length.
+  assert.deepEqual(findLiterals('const d = "2024-01-02";\nconst c = "p-2em";\n'), []);
+});
+
+test("spaceless addition lexes its operand without the operator's sign", () => {
+  // `+` is the same case as `-` and would otherwise be reported as the value
+  // "+16px" — a string no design system contains and no reader would search
+  // their stylesheet for.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-tw-plus-'));
+  try {
+    writeFileSync(join(root, 'a.tsx'), ['const a = <div className="w-[calc(100%+16px)]" />;', ''].join('\n'));
+    const { findings } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].value, '16px');
+    assert.equal(findings[0].nearestToken, '--s2');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
