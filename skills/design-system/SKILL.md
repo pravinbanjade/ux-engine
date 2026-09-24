@@ -81,7 +81,35 @@ the right order, resolve what they could not, and explain the result.
    regeneration.
 
 7. **Report.** Name the styling system, the component directory, the token
-   count by group, and anything you had to ask about.
+   count by group, and anything you had to ask about. If a group came back
+   with fewer than three distinct values, say so here — that is the group
+   every length check will suppress.
+
+## When a group is too thin to be a scale
+
+An audit reports this as a suppression, and the report now lists the values
+the codebase already uses under it:
+
+```
+- UX-102 suppressed for spacing — 2 distinct values, not a scale (321 literals)
+  - Most used: `24px` (×22), `1rem` (×18), `8px` (×9) — 16 more not shown
+```
+
+That list is evidence, not a scale. Read it and propose one; do not write one
+the code does not support, and do not present your proposal as something the
+tool measured.
+
+- **Look for the base.** If most values are multiples of one number, say so
+  and build the scale from it. If they are not, say that instead — a
+  codebase with 19 unrelated spacing values does not have an implicit scale
+  waiting to be named, and pretending otherwise produces a scale nobody's
+  code matches.
+- **Mixed units are a finding of their own.** `16px` and `1rem` appear as
+  separate rows because they are written separately. Raise it; do not
+  silently normalise.
+- **The user decides.** Propose the scale, show which of their existing
+  values fall on it and which do not, and let them choose. Adding tokens
+  changes every future audit of the repo, so it is not yours to apply.
 
 ## Re-running on a repo that already has DESIGN.md
 

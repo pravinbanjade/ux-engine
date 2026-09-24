@@ -1089,3 +1089,87 @@ test("spaceless addition lexes its operand without the operator's sign", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// A profile whose spacing group is a pair, not a scale — the shape four of
+// four repositories dogfooded so far actually have. Every literal below is
+// suppressed; the question these tests ask is what the suppression carries.
+const THIN_SCALE_PROFILE = {
+  styling: { tokenSource: [] },
+  tokens: {
+    spacing: { '--s1': '4px', '--s2': '4px', '--s3': '8px' },
+    radius: {},
+    type: {},
+  },
+};
+
+test('an unusable group keeps the literals it suppressed, most used first', () => {
+  // Throwing them away is what made the suppression line unactionable: it
+  // told a reader their spacing scale is too thin and then withheld the only
+  // evidence of what a real one would contain. `16px` and `1rem` stay
+  // separate rows rather than being merged into pixels — a repository
+  // writing both is saying something, and merging it away would hide it.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-dist-'));
+  try {
+    writeFileSync(join(root, 'a.css'), [
+      '.a { padding: 24px; }',
+      '.b { padding: 24px; }',
+      '.c { padding: 24px; }',
+      '.d { margin: 1rem; }',
+      '.e { margin: 1rem; }',
+      '.f { gap: 40px; }',
+      '.g { gap: 8px; }',
+      '',
+    ].join('\n'));
+    const { suppressed } = scanRepo(root, THIN_SCALE_PROFILE, {});
+    const entry = suppressed.find((s) => s.reason === 'unusable-scale');
+    assert.equal(entry.count, 7);
+    assert.equal(entry.distinctLiterals, 4);
+    // Ties break by length ascending, so 8px precedes 40px: a reader
+    // scanning the tail of the list reads a scale, not an arbitrary order.
+    assert.deepEqual(entry.values, [
+      { value: '24px', count: 3 },
+      { value: '1rem', count: 2 },
+      { value: '8px', count: 1 },
+      { value: '40px', count: 1 },
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the kept literals stop at twelve, and the entry says how many there were', () => {
+  // A report is read, not queried. Twelve rows is enough to see the shape of
+  // an implicit scale; the count is what tells a reader the list was cut.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-dist-cap-'));
+  try {
+    const lines = [];
+    for (let i = 1; i <= 15; i += 1) lines.push(`.c${i} { padding: ${i * 3}px; }`);
+    writeFileSync(join(root, 'a.css'), `${lines.join('\n')}\n`);
+    const { suppressed } = scanRepo(root, THIN_SCALE_PROFILE, {});
+    const entry = suppressed.find((s) => s.reason === 'unusable-scale');
+    assert.equal(entry.count, 15);
+    assert.equal(entry.distinctLiterals, 15);
+    assert.equal(entry.values.length, 12);
+    assert.deepEqual(entry.values[0], { value: '3px', count: 1 });
+    assert.deepEqual(entry.values[11], { value: '36px', count: 1 });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a no-context suppression carries no literals', () => {
+  // Those literals have no group at all, so they are not raw material for
+  // any one scale. Listing them under a group heading would assert a
+  // membership the scanner deliberately refused to guess.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-dist-none-'));
+  try {
+    writeFileSync(join(root, 'a.css'), ['.a { filter: blur(16px); }', ''].join('\n'));
+    const { suppressed } = scanRepo(root, THIN_SCALE_PROFILE, {});
+    const entry = suppressed.find((s) => s.reason === 'no-context');
+    assert.equal(entry.count, 1);
+    assert.equal(entry.values, undefined);
+    assert.equal(entry.distinctLiterals, undefined);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
