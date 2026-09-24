@@ -187,7 +187,7 @@ const escapeForRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // entry for every corner/axis.
 function bracketHintRe(prefixes) {
   const alt = prefixes.map(escapeForRegex).join('|');
-  return new RegExp(`${HINT_BOUNDARY}(?:${alt})(?:-[a-z]+)?-\\[$`, 'i');
+  return new RegExp(`${HINT_BOUNDARY}(?:${alt})(?:-[a-z]+)?-\\[${ARITHMETIC_WRAPPER}$`, 'i');
 }
 
 // CSS/JS property names precede a value with a colon, in kebab or camel

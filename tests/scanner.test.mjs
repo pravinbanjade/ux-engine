@@ -968,3 +968,54 @@ test('a wrapper under an unlisted property stays fail-closed', () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('an arithmetic wrapper inside a Tailwind arbitrary value carries the hint', () => {
+  // `w-[calc(100%-2rem)]` is the same expression as `width: calc(100% - 2rem)`
+  // written in the syntax a Tailwind repo actually uses, and the dogfood
+  // target holds seven of them. Covering the CSS spelling and not this one
+  // would rebuild, in a new place, the half-covered-property trap this
+  // change exists to remove.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-tw-calc-'));
+  try {
+    writeFileSync(join(root, 'a.tsx'), [
+      'const b = <div className="max-w-[min(100%,16px)]" />;',
+      'const c = <div className="h-[calc(100vh-16px)]" />;',
+      '',
+    ].join('\n'));
+    const { findings, suppressed } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
+    // One finding, from the min() line. The `h-[calc(100vh-16px)]` line
+    // contributes nothing at all — and not because of the viewport rule:
+    // with no space around the minus, the literal scanner's NOT_BEFORE
+    // guard rejects both `-16px` (preceded by `h`) and `16px` (preceded by
+    // `-`), so that expression holds no literal to hint in the first place.
+    // It is fail-closed one step earlier than the hint table.
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].value, '16px');
+    assert.equal(findings[0].nearestToken, '--s2', 'the bracket wrapper did not carry the spacing hint');
+    assert.equal(suppressed.length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Tailwind's spaceless subtraction still lexes its operand as a negative length", () => {
+  // KNOWN GAP, pinned deliberately so it is not mistaken for the wrapper
+  // rule failing. In `w-[calc(100%-16px)]` there is no whitespace around the
+  // minus, so the literal scanner reads `-16px` — a negative length — rather
+  // than the operator-plus-operand it is. The hint reaches it correctly; no
+  // positive spacing token can match it, so nothing is offered. That is
+  // fail-closed and harmless, but it does make the wrapper rule inert for
+  // this spelling. Fixing it means changing NOT_BEFORE/NUMBER, which every
+  // colour and duration pattern shares, so it belongs to its own cycle.
+  // When that lands, this test should flip to expect '16px' and '--s2'.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-tw-neg-'));
+  try {
+    writeFileSync(join(root, 'a.tsx'), ['const a = <div className="w-[calc(100%-16px)]" />;', ''].join('\n'));
+    const { findings } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].value, '-16px');
+    assert.equal(findings[0].nearestToken, null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
