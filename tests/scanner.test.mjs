@@ -833,3 +833,189 @@ test('no-context suppressions tally once with a count across files', () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// The three tests below share one fixture shape, borrowed from the longhand
+// test above: every literal is 16px, the radius group holds 16px exactly and
+// the spacing group holds 17px nearby. An unhinted literal therefore takes
+// the radius token on numeric distance alone, so "took --s2" is evidence the
+// hint steered the search rather than arithmetic.
+const HINT_FIXTURE_PROFILE = {
+  styling: { tokenSource: [] },
+  tokens: {
+    spacing: { '--s1': '4px', '--s2': '17px', '--s3': '32px' },
+    radius: { '--r1': '16px', '--r2': '20px', '--r3': '28px' },
+    type: { '--t1': '17px', '--t2': '20px', '--t3': '24px' },
+  },
+};
+
+test('camelCase property spellings carry the hint their kebab form does', () => {
+  // A style object written in JS spells the property paddingTop, not
+  // padding-top. The kebab list held 43 longhands and not one camelCase
+  // compound, so every one of these was unhinted — and since the scanner
+  // began failing closed, unhinted means no check at all rather than a
+  // sloppy one. borderRadius and fontSize worked only because someone had
+  // hand-added their hyphen-stripped spellings to those two lists.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-camel-'));
+  try {
+    writeFileSync(join(root, 'a.tsx'), [
+      "const a = { paddingTop: '16px' };",
+      "const b = { marginBottom: '16px' };",
+      "const c = { minWidth: '16px' };",
+      "const d = { rowGap: '16px' };",
+      "const e = { insetInlineStart: '16px' };",
+      '',
+    ].join('\n'));
+    const { findings } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
+    assert.equal(findings.length, 5);
+    for (const finding of findings) {
+      assert.equal(finding.nearestToken, '--s2', `${finding.value} on line ${finding.line} took a radius token`);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kebab type properties carry the type hint their camelCase form does', () => {
+  // The same trap, pointing the other way: the type list held `lineheight`
+  // and `letterspacing` but never `line-height` or `letter-spacing`, so the
+  // spellings a stylesheet actually uses went unhinted. Nine literals in the
+  // dogfood target.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-kebab-type-'));
+  try {
+    writeFileSync(join(root, 'a.css'), [
+      '.a { line-height: 16px; }',
+      '.b { letter-spacing: 16px; }',
+      '',
+    ].join('\n'));
+    const { findings } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
+    assert.equal(findings.length, 2);
+    for (const finding of findings) {
+      assert.equal(finding.nearestToken, '--t1', `line ${finding.line} did not take a type token`);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an arithmetic wrapper passes the property hint through to its operands', () => {
+  // `calc(100% - 16px)` subtracts a gutter from a container: the 16px is
+  // that property's value, exactly as a shorthand's later values are.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-calc-'));
+  try {
+    writeFileSync(join(root, 'a.css'), [
+      '.a { width: calc(100% - 16px); }',
+      '.b { padding: calc(16px + 1rem); }',
+      '.c { max-width: min(100%, 16px); }',
+      '.d { margin-top: clamp(16px, 2%, 2rem); }',
+      '',
+    ].join('\n'));
+    const { findings } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
+    // Six, not four: `calc(16px + 1rem)` and `clamp(16px, 2%, 4rem)` each
+    // hold a second length, and those later operands keep the hint too —
+    // the same rule that carries a shorthand's later values.
+    assert.equal(findings.length, 6);
+    for (const finding of findings) {
+      // The subject is which GROUP the hint steered the search to, not which
+      // step of it won: 2rem is nearest --s3 and 16px is nearest --s2, and
+      // both are the right kind of answer. Only a radius token is wrong.
+      assert.match(finding.nearestToken ?? 'none', /^--s[123]$/, `line ${finding.line} (${finding.value}) did not take a spacing token`);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('viewport arithmetic inside a wrapper gets no hint at all', () => {
+  // `calc(100vh - 56px)` is layout math: the 56px is a header height, not a
+  // step on the spacing scale, and offering it a spacing token that happens
+  // to match numerically is the mistake the fail-closed change exists to
+  // prevent. A viewport unit anywhere in the expression breaks the span
+  // between the property and the literal, so the literal falls out unhinted.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-viewport-'));
+  try {
+    writeFileSync(join(root, 'a.css'), [
+      '.a { height: calc(100vh - 16px); }',
+      '.b { width: calc(100vw - 16px); }',
+      '.c { max-height: min(100dvh, 16px); }',
+      '',
+    ].join('\n'));
+    const { findings, suppressed } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
+    assert.equal(findings.length, 0, 'a viewport-relative length was offered a token');
+    const noContext = suppressed.find((s) => s.id === 'UX-102' && s.reason === 'no-context');
+    assert.equal(noContext.count, 3);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a wrapper under an unlisted property stays fail-closed', () => {
+  // The gate is the property, not the function. filter, transform and
+  // box-shadow are in no hint list, so their lengths keep getting nothing —
+  // these are the exact shapes restyle defect 5 wrote radius tokens into.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-unlisted-'));
+  try {
+    writeFileSync(join(root, 'a.css'), [
+      '.a { filter: blur(16px); }',
+      '.b { transform: translateY(16px); }',
+      '.c { box-shadow: 0 16px 0 red; }',
+      '',
+    ].join('\n'));
+    const { findings, suppressed } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
+    assert.equal(findings.length, 0, 'an unlisted property was offered a token');
+    const noContext = suppressed.find((s) => s.id === 'UX-102' && s.reason === 'no-context');
+    assert.equal(noContext.count, 3);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an arithmetic wrapper inside a Tailwind arbitrary value carries the hint', () => {
+  // `w-[calc(100%-2rem)]` is the same expression as `width: calc(100% - 2rem)`
+  // written in the syntax a Tailwind repo actually uses, and the dogfood
+  // target holds seven of them. Covering the CSS spelling and not this one
+  // would rebuild, in a new place, the half-covered-property trap this
+  // change exists to remove.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-tw-calc-'));
+  try {
+    writeFileSync(join(root, 'a.tsx'), [
+      'const b = <div className="max-w-[min(100%,16px)]" />;',
+      'const c = <div className="h-[calc(100vh-16px)]" />;',
+      '',
+    ].join('\n'));
+    const { findings, suppressed } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
+    // One finding, from the min() line. The `h-[calc(100vh-16px)]` line
+    // contributes nothing at all — and not because of the viewport rule:
+    // with no space around the minus, the literal scanner's NOT_BEFORE
+    // guard rejects both `-16px` (preceded by `h`) and `16px` (preceded by
+    // `-`), so that expression holds no literal to hint in the first place.
+    // It is fail-closed one step earlier than the hint table.
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].value, '16px');
+    assert.equal(findings[0].nearestToken, '--s2', 'the bracket wrapper did not carry the spacing hint');
+    assert.equal(suppressed.length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Tailwind's spaceless subtraction still lexes its operand as a negative length", () => {
+  // KNOWN GAP, pinned deliberately so it is not mistaken for the wrapper
+  // rule failing. In `w-[calc(100%-16px)]` there is no whitespace around the
+  // minus, so the literal scanner reads `-16px` — a negative length — rather
+  // than the operator-plus-operand it is. The hint reaches it correctly; no
+  // positive spacing token can match it, so nothing is offered. That is
+  // fail-closed and harmless, but it does make the wrapper rule inert for
+  // this spelling. Fixing it means changing NOT_BEFORE/NUMBER, which every
+  // colour and duration pattern shares, so it belongs to its own cycle.
+  // When that lands, this test should flip to expect '16px' and '--s2'.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-tw-neg-'));
+  try {
+    writeFileSync(join(root, 'a.tsx'), ['const a = <div className="w-[calc(100%-16px)]" />;', ''].join('\n'));
+    const { findings } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].value, '-16px');
+    assert.equal(findings[0].nearestToken, null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
