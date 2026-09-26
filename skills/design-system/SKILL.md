@@ -111,6 +111,27 @@ tool measured.
   values fall on it and which do not, and let them choose. Adding tokens
   changes every future audit of the repo, so it is not yours to apply.
 
+## Sizing is not spacing
+
+`spacing` and `sizing` are separate groups and separate suppression lines.
+A gap, a padding and a margin are steps on a rhythm; a width and a height
+are dimensions. Do not merge the two distributions, and do not propose one
+scale covering both — a repository whose gutters are `0.25rem` apart and
+whose containers are `1184px` and `1440px` has two questions, not one.
+
+A sizing distribution led by `100%`, `100vh` or `50%` is telling you it is
+mostly layout, not a scale. In OpenWA, 96 of 338 sizing literals are
+`100%` and 12 are `100vh`. Nothing is gained by tokenising those — say so
+and move to the fixed widths underneath them, which is where container and
+breakpoint tokens belong. A repository whose whole sizing distribution is
+viewport fractions does not want a sizing scale at all; say that too.
+
+When you do propose sizing tokens, name them so they land in the group:
+`--container-*`, `--breakpoint-*`, `--screen-*` and names containing
+`width`, `height` or `size` are read as sizing. A token named `--space-96`
+lands in spacing however wide it is, and the sizing suppression will still
+report no scale.
+
 ## Re-running on a repo that already has DESIGN.md
 
 Running step 5 again is safe — hand-written sections are preserved

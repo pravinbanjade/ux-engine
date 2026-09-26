@@ -7,13 +7,15 @@ detection: scanner
 appliesTo: [any]
 ---
 ## Signal
-A margin, padding, or gap declaration uses a numeric literal (`13px`,
-`0.85rem`) that does not match any value in the project's spacing token
-group, whether written directly in a style declaration or produced by an
-inline utility escape hatch that accepts an arbitrary value, rather than a
-spacing token or a utility class generated from the scale. The scanner flags
-values that fall outside the declared spacing step set with no tolerance for
-near-misses.
+A length declaration uses a numeric literal (`13px`, `0.85rem`) that does
+not match any value in the token group its context selects, whether written
+directly in a style declaration or produced by an inline utility escape
+hatch that accepts an arbitrary value. A margin, padding or gap is measured
+against the `spacing` group; a width, height or `size-*` against `sizing`,
+which holds container and breakpoint tokens rather than rhythm steps. The
+scanner flags values that fall outside the declared step set with no
+tolerance for near-misses, and reports nothing at all when the context does
+not say which group a length belongs to.
 
 ## Why it fails
 Spacing consistency is what makes a UI feel like one coherent system instead
@@ -23,11 +25,13 @@ different" effect that a spacing scale exists to eliminate, and each one
 makes the next off-scale value look more normal by precedent.
 
 ## Fix
-Snap the value to the nearest step in the existing spacing scale (the
-`spacing` token group, extracted from `styling.tokenSource`) rather than
-tuning a bespoke number — if the layout genuinely needs a gap the scale
-doesn't offer, that's a signal to add a new step to the scale itself, not to
-special-case one component around it.
+Snap the value to the `nearestToken` the finding names, not to whichever
+step looks close — the scanner picked the group from the surrounding code
+(`spacing` for a padding, margin or gap; `sizing` for a width or height),
+and snapping a container width to a gutter token is what that separation
+exists to prevent. If the layout genuinely needs a step the scale doesn't
+offer, that's a signal to add one to that scale, not to special-case one
+component around it.
 
 ## Counter-example — when this is fine
 A value that isn't really "spacing" in the design-system sense at all — a
