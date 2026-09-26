@@ -92,7 +92,7 @@ test('the audit skill excludes conformance and scanner modes when selecting', ()
   // compare against, and the scanner already reported its own modes in step 2.
   // Both exclusions now travel as selector flags rather than prose the reader
   // has to remember to apply.
-  const skill = readFileSync(fileURLToPath(new URL('../skills/ux-audit/SKILL.md', import.meta.url)), 'utf8');
+  const skill = readFileSync(fileURLToPath(new URL('../skills/audit-ui/SKILL.md', import.meta.url)), 'utf8');
   assert.match(skill, /--exclude-detection scanner,conformance/);
   assert.ok(!/Read `\$\{CLAUDE_PLUGIN_ROOT\}\/skills\/failure-modes\/references\/INDEX\.md`/.test(skill),
     'the audit should select, not read the whole index');

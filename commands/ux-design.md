@@ -3,7 +3,7 @@ name: ux-design
 description: Generate new UI against this repo's recorded design system — intent questions, a reviewed wireframe, then code checked against both the failure-mode library and the wireframe you approved.
 ---
 
-Use the `ux-design` skill to generate UI in the repository at the current
+Use the `ux-engine:design-ui` skill to generate UI in the repository at the current
 working directory.
 
 `$ARGUMENTS` is the intent: what screen is being built. If it is empty, ask

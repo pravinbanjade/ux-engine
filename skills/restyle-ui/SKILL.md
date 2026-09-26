@@ -1,5 +1,5 @@
 ---
-name: ux-restyle
+name: restyle-ui
 description: Use when repairing UI that an audit has already flagged — substituting off-system literals for tokens and proposing the repairs no script can make. Writes to source files, and never without approval.
 ---
 

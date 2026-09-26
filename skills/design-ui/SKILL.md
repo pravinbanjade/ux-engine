@@ -1,5 +1,5 @@
 ---
-name: ux-design
+name: design-ui
 description: Use when generating new UI in a repo that has a recorded design system — turns a stated intent into a reviewed wireframe and then into code, with a hard gate at the intent and an approval before any file is written.
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: ux-audit
+name: audit-ui
 description: Use when reviewing existing UI against this repo's recorded design system — either a path (/ux-audit) or the working diff (/ux-review). Reports findings; never edits code.
 ---
 

@@ -3,7 +3,7 @@ name: ux-audit
 description: Audit existing UI in this repo against its recorded design system and report findings ranked by severity. Read-only; never edits code.
 ---
 
-Use the `ux-audit` skill to audit the repository at the current working
+Use the `ux-engine:audit-ui` skill to audit the repository at the current working
 directory.
 
 Scope: if `$ARGUMENTS` names a path, audit that path — pass it to the scanner
