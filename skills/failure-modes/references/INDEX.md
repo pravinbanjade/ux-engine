@@ -99,7 +99,7 @@ UX-098 | accessibility | high | model | The overlay opens without taking, holdin
 UX-099 | accessibility | medium | model | Content changes with nothing announcing the change
 UX-100 | accessibility | medium | hybrid | Motion applied without checking the reduced-motion preference
 UX-101 | system-consistency | high | scanner | Hard-coded colour literal bypasses the token system
-UX-102 | system-consistency | medium | scanner | Hard-coded length bypasses its token scale
+UX-102 | system-consistency | medium | scanner | Hard-coded spacing value bypasses the spacing scale
 UX-103 | system-consistency | low | scanner | Hard-coded animation duration bypasses the motion tokens
 UX-104 | system-consistency | medium | model | One concept rendered by two components with different affordances
 UX-105 | system-consistency | medium | model | A primitive rebuilt instead of composed
@@ -118,3 +118,6 @@ UX-117 | conformance | low | conformance | A component recorded as reused was wr
 UX-118 | conformance | medium | conformance | The implementation's density contradicts the recorded audience
 UX-119 | conformance | high | conformance | The recorded scale is not the scale the code handles
 UX-120 | conformance | high | conformance | The recorded failure has no branch that detects it
+UX-121 | system-consistency | medium | scanner | Hard-coded width or height bypasses the sizing scale
+UX-122 | system-consistency | low | scanner | Hard-coded corner radius bypasses the radius scale
+UX-123 | system-consistency | medium | scanner | Hard-coded font size or line height bypasses the type scale

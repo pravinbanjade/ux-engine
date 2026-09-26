@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { extractBlocks, extractCustomProperties, categorizeToken, groupTokens, isUsableScale, MIN_SCALE_VALUES } from '../scripts/lib/tokens.mjs';
+import { extractBlocks, extractCustomProperties, categorizeToken, groupTokens, isUsableScale, MIN_SCALE_VALUES, nameKind } from '../scripts/lib/tokens.mjs';
 
 const tailwindCss = readFileSync(fileURLToPath(new URL('../tests/fixtures/tailwind-shadcn/src/styles/app.css', import.meta.url)), 'utf8');
 const cssModulesCss = readFileSync(fileURLToPath(new URL('../tests/fixtures/css-modules/src/styles/tokens.css', import.meta.url)), 'utf8');
@@ -164,4 +164,28 @@ test('a line-height or letter-spacing token is typography', () => {
   // is the categoriser catching up to it rather than a new opinion.
   assert.equal(categorizeToken('--line-height-tight', '1.25'), 'type');
   assert.equal(categorizeToken('--letter-spacing-wide', '0.05em'), 'type');
+});
+
+// Layout vocabulary names a dimension without saying width. It is weaker
+// than the sizing rule's own words, so it yields to a spacing word in the
+// name and to a value that is not a length.
+test('layout and column tokens with a length value are sizing', () => {
+  assert.equal(categorizeToken('--layout-md', '1184px'), 'sizing');
+  assert.equal(categorizeToken('--col-8', '66.666%'), 'sizing');
+  assert.equal(categorizeToken('--columns-narrow', '40rem'), 'sizing');
+  assert.equal(categorizeToken('--measure', '65ch'), 'other');
+});
+
+test('layout words yield to a spacing word and to a non-length value', () => {
+  assert.equal(categorizeToken('--layout-gap', '24px'), 'spacing');
+  assert.equal(categorizeToken('--column-gap', '16px'), 'spacing');
+  assert.equal(categorizeToken('--layout-gutter', '16px'), 'spacing');
+  assert.equal(categorizeToken('--grid-cols', 'repeat(12, minmax(0, 1fr))'), 'other');
+  assert.equal(categorizeToken('--color-accent', '#3b7d4f'), 'color');
+});
+
+test('nameKind reports a name rule\'s group, or null when only the value decides', () => {
+  assert.equal(nameKind('--space-4'), 'spacing');
+  assert.equal(nameKind('--container-lg'), 'sizing');
+  assert.equal(nameKind('--wrap-max'), null);
 });

@@ -10,7 +10,7 @@ scope: path `.` · 1 high · 1 medium · 1 low
 ## Medium
 
 - **UX-102** · `src/components/Offender.tsx:4` — Off-system length `17px` measured against the spacing scale — nearest token `--spacing-4` (distance 0.06).
-  - Fix: Snap the value to the `nearestToken` the finding names. The row says which scale it measured against, and that is the scale to snap within — a container width takes a container token, not the gutter step that happens to be closer in pixels. If the design genuinely needs a step that scale does not offer, add it to that scale, so the next component has it too, rather than special-casing this one call site.
+  - Fix: Snap the value to the `nearestToken` the finding names. If the layout genuinely needs a gap the spacing scale does not offer, add the step to the scale so the next component has it too, rather than special-casing this one call site.
 
 ## Low
 

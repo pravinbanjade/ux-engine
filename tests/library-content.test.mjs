@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { loadModes, validateModeFile, checkIndex, CATEGORIES, CATEGORY_RANGES } from '../scripts/lib/library.mjs';
+import { loadModes, validateModeFile, checkIndex, CATEGORIES, CATEGORY_RANGES, CATALOG_SIZE, inCategoryRange } from '../scripts/lib/library.mjs';
 
 const dir = fileURLToPath(new URL('../skills/failure-modes/references', import.meta.url));
 const modes = loadModes(dir);
@@ -18,23 +18,23 @@ test('the index is in sync', () => {
   assert.deepEqual(checkIndex(modes, index), []);
 });
 
-test('the catalog is complete: IDs 001-120, each exactly once', () => {
+test('the catalog is complete: IDs 001-CATALOG_SIZE, each exactly once', () => {
   const nums = modes.map((m) => Number(m.data.id.slice(3))).sort((a, b) => a - b);
-  assert.equal(nums.length, 120, `catalog holds ${nums.length} modes`);
-  for (let n = 1; n <= 120; n++) {
+  assert.equal(nums.length, CATALOG_SIZE, `catalog holds ${nums.length} modes`);
+  for (let n = 1; n <= CATALOG_SIZE; n++) {
     assert.equal(nums[n - 1], n, `UX-${String(n).padStart(3, '0')} is missing or duplicated`);
   }
 });
 
-test('every category fills its declared range exactly', () => {
+test('every category fills its declared ranges exactly', () => {
   for (const category of CATEGORIES) {
-    const [lo, hi] = CATEGORY_RANGES[category];
     const found = modes
       .filter((m) => m.data.category === category)
       .map((m) => Number(m.data.id.slice(3)))
       .sort((a, b) => a - b);
-    const expected = Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
-    assert.deepEqual(found, expected, `${category} does not fill ${lo}-${hi}`);
+    const expected = CATEGORY_RANGES[category]
+      .flatMap(([lo, hi]) => Array.from({ length: hi - lo + 1 }, (_, i) => lo + i));
+    assert.deepEqual(found, expected, `${category} does not fill its ranges`);
   }
 });
 
@@ -45,7 +45,7 @@ test('all four detection kinds are represented', () => {
 });
 
 test('the scanner modes the scanner emits exist', () => {
-  for (const id of ['UX-101', 'UX-102', 'UX-103']) {
+  for (const id of ['UX-101', 'UX-102', 'UX-103', 'UX-121', 'UX-122', 'UX-123']) {
     const mode = modes.find((m) => m.data.id === id);
     assert.ok(mode, `${id} missing`);
     assert.equal(mode.data.detection, 'scanner');
@@ -123,30 +123,36 @@ test('every appliesTo value in the catalog is in the vocabulary', () => {
 
 test('every mode ID sits in its category range', () => {
   for (const m of modes) {
-    const [lo, hi] = CATEGORY_RANGES[m.data.category];
     const n = Number(m.data.id.slice(3));
-    assert.ok(n >= lo && n <= hi, `${m.filename}: ${m.data.id} outside ${m.data.category} ${lo}-${hi}`);
+    assert.ok(inCategoryRange(m.data.category, n), `${m.filename}: ${m.data.id} outside ${m.data.category}`);
   }
 });
 
 import { checkCrossFile } from '../scripts/lib/library.mjs';
+import { GROUP_TO_ID } from '../scripts/lib/scanner.mjs';
 
 test('no two modes duplicate an id, a title, or a signal', () => {
   assert.deepEqual(checkCrossFile(modes), []);
 });
 
-// UX-102 is the mode every off-system length resolves to, and the scanner
-// measures lengths against four different scales. Across four real
-// repositories 403 of 403 emitted UX-102 findings came from the `type` or
-// `radius` scale, and every one of them resolved to a page arguing about
-// spacing rhythm. The mode has to be readable as advice about whichever
-// scale the finding names, so the word `spacing` may appear in it only as
-// one example among the others — never as the subject.
-test('UX-102 does not present itself as a mode about spacing alone', () => {
-  const mode = modes.find((m) => m.data.id === 'UX-102');
-  assert.ok(mode, 'UX-102 missing');
-  assert.doesNotMatch(mode.data.title, /spacing/i, 'the title names one of the four scales');
-  for (const group of ['sizing', 'radius', 'type']) {
-    assert.match(mode.body, new RegExp(group, 'i'), `the body never mentions the ${group} scale`);
+// Each length scale resolves to a mode about that scale. When one mode
+// covered all four, its title had to stay neutral and a container width was
+// reported under advice that also had to fit a font size — a reader looking
+// up why an off-scale radius matters found a page about four things at once.
+// The scanner's own map is the source of truth here, so a fifth scale added
+// there without a mode of its own fails this test rather than a report.
+test('every length scale the scanner measures has a mode titled for it', () => {
+  const lengthGroups = Object.keys(GROUP_TO_ID).filter((g) => !['color', 'motion'].includes(g));
+  assert.deepEqual(lengthGroups.sort(), ['radius', 'sizing', 'spacing', 'type']);
+  const TITLE_WORD = { spacing: /spacing/i, sizing: /size|sizing|width|dimension/i, radius: /radius|corner/i, type: /type|font/i };
+  const seen = new Set();
+  for (const group of lengthGroups) {
+    const id = GROUP_TO_ID[group];
+    assert.ok(!seen.has(id), `${group} shares ${id} with another scale`);
+    seen.add(id);
+    const mode = modes.find((m) => m.data.id === id);
+    assert.ok(mode, `${id} (${group}) missing`);
+    assert.equal(mode.data.detection, 'scanner');
+    assert.match(mode.data.title, TITLE_WORD[group], `${id}'s title does not name the ${group} scale`);
   }
 });
