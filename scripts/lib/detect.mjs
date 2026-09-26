@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { extractCustomProperties } from './tokens.mjs';
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'build', '.git', '.next', 'coverage']);
@@ -32,6 +32,19 @@ export function readManifest(root) {
   }
 }
 
+// The directory of the nearest package.json at or above a repo-relative
+// path, or '' for the repo root. In a monorepo the UI's dependencies live in
+// its own package — `web/package.json`, `dashboard/package.json` — and the
+// root manifest, when there is one, belongs to the workspace or to a server.
+export function owningPackage(root, relPath) {
+  let dir = dirname(relPath);
+  while (dir && dir !== '.') {
+    if (existsSync(join(root, dir, 'package.json'))) return dir;
+    dir = dirname(dir);
+  }
+  return '';
+}
+
 const majorOf = (range) => Number(String(range ?? '').replace(/^[^\d]*/, '').split('.')[0]) || null;
 
 export function detectStyling(root, deps) {
@@ -56,7 +69,7 @@ export function detectStyling(root, deps) {
   return { system, tokenSource, tokenSyntax, utilityFirst, extraStylesheets };
 }
 
-export function detectComponents(root, deps) {
+export function detectComponents(root, deps, packageDir = '') {
   const files = walkFiles(root, ['.tsx', '.jsx', '.vue', '.svelte']);
   const counts = new Map();
   for (const file of files) {
@@ -79,7 +92,7 @@ export function detectComponents(root, deps) {
   else if (deps['styled-components'] || deps['@emotion/styled']) variantMechanism = 'styled';
   else if (deps.tv || deps['tailwind-variants']) variantMechanism = 'tailwind-variants';
 
-  const library = existsSync(join(root, 'components.json')) ? 'shadcn' : null;
+  const library = existsSync(join(root, packageDir, 'components.json')) ? 'shadcn' : null;
   let primitives = null;
   if (deps['radix-ui'] || Object.keys(deps).some((d) => d.startsWith('@radix-ui/'))) primitives = 'radix';
   else if (deps['@headlessui/react']) primitives = 'headless-ui';

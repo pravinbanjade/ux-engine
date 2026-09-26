@@ -385,3 +385,40 @@ test('a styling.tokenSource entry naming a file that does not exist is skipped r
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// Every repository the plugin was dogfooded on keeps its UI in its own
+// package. Reading only the root manifest recorded a Tailwind v4 frontend as
+// plain CSS with no framework, and let a server root's dependencies stand in.
+test('a monorepo is described by the package that owns its UI', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-monorepo-'));
+  try {
+    const write = (path, text) => {
+      mkdirSync(join(root, path, '..'), { recursive: true });
+      writeFileSync(join(root, path), text);
+    };
+    write('package.json', JSON.stringify({ devDependencies: { jest: '29.0.0' } }));
+    write('api/package.json', JSON.stringify({ dependencies: { express: '4.0.0' } }));
+    write('web/package.json', JSON.stringify({
+      dependencies: { react: '19.0.0', '@radix-ui/react-dialog': '1.0.0', 'class-variance-authority': '0.7.0' },
+      devDependencies: { tailwindcss: '4.1.0', vitest: '3.0.0' },
+    }));
+    write('web/components.json', '{}');
+    write('web/src/styles/app.css', '@import "tailwindcss";\n@theme { --color-a: #111; --color-b: #222; --color-c: #333; }\n');
+    for (const n of ['button', 'card', 'dialog']) write(`web/src/components/ui/${n}.tsx`, 'export {};\n');
+
+    const p = buildProfile(root, { now: NOW });
+    assert.equal(p.styling.system, 'tailwind-v4');
+    assert.equal(p.components.dir, 'web/src/components/ui');
+    assert.equal(p.components.library, 'shadcn');
+    assert.equal(p.components.primitives, 'radix');
+    assert.equal(p.components.variantMechanism, 'cva');
+    assert.equal(p.conventions.framework, 'react-19');
+    assert.equal(p.conventions.testRunner, 'vitest', 'the UI package wins over the root');
+    const sources = p.derivedFrom.map((d) => d.path);
+    assert.ok(sources.includes('web/package.json'), 'a change to the UI manifest must make the profile stale');
+    assert.ok(sources.includes('web/components.json'));
+    assert.ok(!sources.includes('api/package.json'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
