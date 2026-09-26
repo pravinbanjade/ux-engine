@@ -180,19 +180,24 @@ export function isStateToken(name) {
 // goes to a human with the suggestion.
 export const EXACT_COLOR = 0.02;
 
-export function chooseColourToken({ value, property, tokens, themed = [], threshold = DEFAULT_THRESHOLDS.color }) {
+// `themeBase`, when given, is the default-theme value of each theme-varying
+// token, and the caller's consent to use one: such a token is measured
+// against that value and may be chosen, and the choice says so (`adopted`)
+// because the element will then change in every other theme.
+export function chooseColourToken({ value, property, tokens, themed = [], threshold = DEFAULT_THRESHOLDS.color, themeBase = null }) {
   const themedSet = new Set(themed);
   const literal = parseColor(value);
   if (!literal) return { manual: true, reason: 'no-token', token: null };
   const close = [];
   for (const [name, tokenValue] of Object.entries(tokens)) {
-    const parsed = tokenColorFor(literal, tokenValue);
+    const adopted = themedSet.has(name) && Boolean(themeBase?.has(name));
+    const parsed = tokenColorFor(literal, adopted ? themeBase.get(name) : tokenValue);
     if (!parsed) continue;
     const distance = deltaE(literal, parsed);
     if (distance <= threshold) {
       close.push({
         name, distance, role: tokenRole(name), state: isStateToken(name),
-        scoped: isScopedToken(name), themed: themedSet.has(name),
+        scoped: isScopedToken(name), themed: themedSet.has(name) && !adopted, adopted,
       });
     }
   }
@@ -212,7 +217,7 @@ export function chooseColourToken({ value, property, tokens, themed = [], thresh
   }
   const best = (wanted && eligible.find((t) => t.role === wanted)) || eligible[0];
   if (best.distance > EXACT_COLOR) return { manual: true, reason: 'approximate', token: best.name };
-  return { token: best.name };
+  return best.adopted ? { token: best.name, adopted: true } : { token: best.name };
 }
 
 // How a colour token is referenced. A full colour value is the variable
@@ -234,7 +239,19 @@ export function colourReference(token, tokenValue, literal) {
 // file, from its imports, because that is where the renderer is named.
 const NON_DOM_RENDERER = /(?:\bfrom\s*|\brequire\(\s*|\bimport\s*\(?\s*)['"](?:@react-pdf\/renderer|react-native(?:-[\w-]+)?|@react-three\/[\w-]+|ink|pdfkit|jspdf|@shopify\/react-native-skia|expo(?:-[\w-]+)?)(?:\/[^'"]*)?['"]/;
 
-export function planSubstitutions(envelope, { root, tokenSource = [], colorTokens = null, themedTokens = [] }) {
+// A theme-varying token is never applied by default: the literal is one
+// colour in every theme and the token is not. `themeValues` (from
+// tokens.mjs) says what each such token is in the default theme and
+// elsewhere. With `adoptTheme`, a token that matches the literal exactly in
+// the default theme is applied, and its edit lists the values it takes in
+// the other themes, so the plan shows what will change before anything
+// does. Without it, the rows that would qualify are marked `adoptable`.
+export function planSubstitutions(envelope, {
+  root, tokenSource = [], colorTokens = null, themedTokens = [], themeValues = null, adoptTheme = false,
+}) {
+  const themeBase = themeValues
+    ? new Map([...themeValues].filter(([, v]) => v.base !== null).map(([name, v]) => [name, v.base]))
+    : null;
   const edits = [];
   const manual = [];
   const judgment = [];
@@ -309,15 +326,25 @@ export function planSubstitutions(envelope, { root, tokenSource = [], colorToken
 
     let token = finding.nearestToken;
     let replacement = null;
+    let otherThemes = null;
     if (finding.kind === 'color' && colorTokens) {
       const property = PROPERTY_BEFORE.exec(lineText.slice(0, finding.column - 1))?.[1] ?? '';
-      const choice = chooseColourToken({ value: finding.value, property, tokens: colorTokens, themed: themedTokens });
+      const ask = { value: finding.value, property, tokens: colorTokens, themed: themedTokens };
+      const choice = chooseColourToken({ ...ask, themeBase: adoptTheme ? themeBase : null });
       if (choice.manual) {
-        manual.push({ ...finding, nearestToken: choice.token ?? finding.nearestToken, reason: choice.reason });
+        const row = { ...finding, nearestToken: choice.token ?? finding.nearestToken, reason: choice.reason };
+        // Not only `theme-varying` rows: a row is named for its nearest
+        // token, and a themed token that matches exactly can sit behind a
+        // nearer scoped or status one.
+        if (!adoptTheme && themeBase?.size && chooseColourToken({ ...ask, themeBase }).adopted) {
+          row.adoptable = true;
+        }
+        manual.push(row);
         continue;
       }
       token = choice.token;
-      replacement = colourReference(token, colorTokens[token], finding.value);
+      replacement = colourReference(token, choice.adopted ? themeBase.get(token) : colorTokens[token], finding.value);
+      if (choice.adopted) otherThemes = themeValues.get(token).others;
     }
 
     edits.push({
@@ -328,6 +355,7 @@ export function planSubstitutions(envelope, { root, tokenSource = [], colorToken
       value: finding.value,
       token,
       replacement: replacement ?? `var(${token})`,
+      ...(otherThemes ? { otherThemes } : {}),
     });
   }
 
@@ -378,6 +406,17 @@ export function applyEdits(edits, { root, dryRun = false }) {
   return { files, failed, applied: files.reduce((n, f) => n + f.edits, 0) };
 }
 
+// Groups in order of first appearance, each in its original order.
+function groupBy(rows, key) {
+  const groups = new Map();
+  for (const row of rows) {
+    const k = key(row);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(row);
+  }
+  return [...groups.values()];
+}
+
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 const cite = (row) => (row.line === null || row.line === undefined
@@ -390,6 +429,8 @@ export function renderPlan({ edits, manual, judgment }) {
   const summary = [
     `${plural(edits.length, 'substitution', 'substitutions')} in ${plural(fileCount, 'file', 'files')}`,
   ];
+  const themed = edits.filter((e) => e.otherThemes).length;
+  if (themed) summary.push(`${themed} of them ${themed === 1 ? 'changes' : 'change'} in other themes`);
   if (manual.length) summary.push(`${manual.length} ${manual.length === 1 ? 'needs' : 'need'} a human`);
   if (judgment.length) summary.push(`${judgment.length} ${judgment.length === 1 ? 'needs' : 'need'} judgment`);
 
@@ -409,22 +450,52 @@ export function renderPlan({ edits, manual, judgment }) {
     }
     for (const [file, list] of byFile) {
       out.push(`### \`${file}\``, '');
-      for (const edit of list) {
-        out.push(`- L${edit.line}:${edit.column} \`${edit.value}\` → \`${edit.replacement}\` (${edit.id})`);
+      // The same literal becoming the same reference is one decision however
+      // many times the file repeats it, so it is one row with every position.
+      for (const same of groupBy(list, (e) => `${e.id}|${e.value}|${e.replacement}`)) {
+        const at = same.map((e) => `L${e.line}:${e.column}`).join(', ');
+        const others = same[0].otherThemes
+          ? ` — other themes: ${same[0].otherThemes.map((v) => `\`${v}\``).join(', ')}`
+          : '';
+        out.push(`- ${at} \`${same[0].value}\` → \`${same[0].replacement}\` (${same[0].id})${others}`);
       }
       out.push('');
     }
   }
 
   // Manual rows still carry the answer — the token to use — so this list is
-  // a work queue, not a shrug.
+  // a work queue, not a shrug. It is grouped by why each row was left alone,
+  // because that is what decides what the reader does with it, and then by
+  // literal and token: one white written forty times with the same suggested
+  // token is one decision, and forty rows made it look like forty.
   if (manual.length) {
     out.push('## Needs a human', '');
-    for (const row of manual) {
-      const target = row.nearestToken ? ` → \`${row.nearestToken}\`` : '';
-      out.push(`- ${cite(row)} — \`${row.value}\`${target}: ${row.reason}`);
+    const byReason = groupBy(manual, (row) => row.reason).sort((a, b) => b.length - a.length);
+    for (const rows of byReason) {
+      out.push(`### ${rows[0].reason} (${rows.length})`, '');
+      const adoptable = rows.filter((row) => row.adoptable).length;
+      if (adoptable) {
+        const verb = adoptable === 1 ? 'matches' : 'match';
+        out.push(`${adoptable} of these ${verb} a theme-varying token in the default theme. \`--adopt-theme\` substitutes ${adoptable === 1 ? 'it' : 'them'}, and the element then takes the token's value in the other themes.`, '');
+      }
+      const byLiteral = groupBy(rows, (row) => `${row.value}|${row.nearestToken ?? ''}`)
+        .sort((a, b) => b.length - a.length);
+      for (const same of byLiteral) {
+        const target = same[0].nearestToken ? ` → \`${same[0].nearestToken}\`` : '';
+        if (same.length === 1) {
+          out.push(`- ${cite(same[0])} — \`${same[0].value}\`${target}`);
+          continue;
+        }
+        const places = groupBy(same, (row) => row.file)
+          .map((inFile) => {
+            const lines = inFile.filter((row) => row.line !== null && row.line !== undefined).map((row) => `L${row.line}`);
+            return lines.length ? `\`${inFile[0].file}\` ${lines.join(', ')}` : `\`${inFile[0].file}\``;
+          })
+          .join(' · ');
+        out.push(`- \`${same[0].value}\`${target} ×${same.length} — ${places}`);
+      }
+      out.push('');
     }
-    out.push('');
   }
 
   if (judgment.length) {

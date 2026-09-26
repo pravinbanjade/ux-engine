@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { extractBlocks, extractCustomProperties, categorizeToken, groupTokens, isUsableScale, MIN_SCALE_VALUES, nameKind, themedTokenNames } from '../scripts/lib/tokens.mjs';
+import { extractBlocks, extractCustomProperties, categorizeToken, groupTokens, isUsableScale, MIN_SCALE_VALUES, nameKind, themedTokenNames, themeValues } from '../scripts/lib/tokens.mjs';
 
 const tailwindCss = readFileSync(fileURLToPath(new URL('../tests/fixtures/tailwind-shadcn/src/styles/app.css', import.meta.url)), 'utf8');
 const cssModulesCss = readFileSync(fileURLToPath(new URL('../tests/fixtures/css-modules/src/styles/tokens.css', import.meta.url)), 'utf8');
@@ -208,4 +208,22 @@ test('a bare-channel token is a colour even when its name says nothing', () => {
   assert.equal(categorizeToken('--primary', '222.2 47.4% 11.2%'), 'color');
   assert.equal(categorizeToken('--ring', '215 20.2% 65.1%'), 'color');
   assert.equal(categorizeToken('--shadow-sm', '0 1px 2px'), 'shadow');
+});
+
+// The default theme is a plain :root, html or @theme block, and a cascade
+// layer does not change that: shadcn writes `@layer base { :root { … } }`.
+test('themeValues gives each theme-varying token its default and other values', () => {
+  const css = [
+    '@layer base { :root { --bg: 0 0% 100%; --fg: #111; --solo: red; } }',
+    '.dark { --bg: 222 47% 11%; --fg: #EEE; }',
+    '@media (prefers-color-scheme: dark) { :root { --fg: #ddd; } }',
+    '/* :root { --fg: #999; } */',
+    ':root[data-theme="x"] { --z: 1px; }',
+    '.a { --z: 2px; }',
+  ].join('\n');
+  const values = themeValues([css]);
+  assert.deepEqual(values.get('--bg'), { base: '0 0% 100%', others: ['222 47% 11%'] });
+  assert.deepEqual(values.get('--fg'), { base: '#111', others: ['#EEE', '#ddd'] });
+  assert.deepEqual(values.get('--z'), { base: null, others: ['1px', '2px'] });
+  assert.equal(values.has('--solo'), false, 'a token with one value is not theme-varying');
 });

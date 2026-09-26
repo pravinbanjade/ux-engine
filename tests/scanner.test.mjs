@@ -1020,7 +1020,10 @@ test('an arithmetic wrapper inside a Tailwind arbitrary value carries the hint',
     assert.equal(findings.length, 1);
     assert.equal(findings[0].value, '16px');
     assert.equal(findings[0].nearestToken, '--w2', 'the bracket wrapper did not carry the sizing hint');
-    assert.deepEqual(suppressed, [{ id: 'UX-102', reason: 'no-context', kind: 'length', count: 1 }]);
+    assert.deepEqual(suppressed, [{
+      id: 'UX-102', reason: 'no-context', kind: 'length', count: 1,
+      distinctContexts: 1, contexts: [{ context: 'h-[', count: 1 }],
+    }]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1344,7 +1347,10 @@ test('a duration-shaped value outside any motion context is not measured', () =>
     ].join('\n'));
     const { findings, suppressed } = scanRepo(root, MOTION_PROFILE, {});
     assert.deepEqual(findings, []);
-    assert.deepEqual(suppressed, [{ id: 'UX-103', reason: 'no-context', kind: 'time', count: 5 }]);
+    assert.deepEqual(suppressed, [{
+      id: 'UX-103', reason: 'no-context', kind: 'time', count: 5, distinctContexts: 2,
+      contexts: [{ context: 'unrecognised', count: 4 }, { context: 'WEBHOOK_TIMEOUT', count: 1 }],
+    }]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1423,6 +1429,23 @@ test('a sizing suppression with nothing misfiled carries no unclaimed list', () 
   }
 });
 
+// `--y-r: 10px` is a radius with a one-letter name. It is unclaimed, but no
+// container is 10px wide, and naming it sent the reader to the wrong token.
+test('a short unclaimed token is not offered as a missing dimension', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-unclaimed-short-'));
+  try {
+    writeFileSync(join(root, 'a.css'), '.a { max-width: 1184px; }\n');
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { spacing: { '--space-1': '4px', '--y-r': '10px', '--y-r-lg': '14px', '--shell': '60rem' } },
+    };
+    const { suppressed } = scanRepo(root, profile, {});
+    assert.deepEqual(suppressed.find((s) => s.id === 'UX-121').unclaimedTokens, ['--shell']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 // Found by the restyle pass on a stylesheet written `var(--border, #e2e8f0)`
 // throughout: every fallback was a finding, and the plan offered to replace
 // the fallback of a token reference with another token reference.
@@ -1483,6 +1506,62 @@ test('a profile with no recorded package, or a root-level UI, is scanned whole',
       const { findings } = scanRepo(root, { styling: { tokenSource: [] }, components, tokens }, {});
       assert.equal(findings.length, 2);
     }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Found by tallying what the unmeasured lengths of four repositories were
+// written after: every corner longhand of a radius, and a flex basis.
+test('corner radius longhands, flex basis and scroll offsets are hinted', () => {
+  const cases = [
+    ['.a { border-bottom-left-radius: 2px; }', 'radius'],
+    ['.a { border-start-end-radius: 2px; }', 'radius'],
+    ['const s = { borderTopRightRadius: 12px };', 'radius'],
+    ['.a { flex: 0 0 8.5rem; }', 'sizing'],
+    ['.a { flex-basis: 200px; }', 'sizing'],
+    ['<div className="basis-[200px]" />', 'sizing'],
+    ['.a { scroll-margin-top: 64px; }', 'spacing'],
+  ];
+  for (const [line, group] of cases) {
+    const root = mkdtempSync(join(tmpdir(), 'ux-engine-hint-more-'));
+    try {
+      writeFileSync(join(root, line.startsWith('.') ? 'a.css' : 'a.tsx'), `${line}\n`);
+      const profile = {
+        styling: { tokenSource: [] },
+        tokens: { [group]: { '--a': '1px', '--b': '100px', '--c': '1000px' } },
+      };
+      const { findings } = scanRepo(root, profile, {});
+      assert.equal(findings.length, 1, line);
+      assert.equal(findings[0].group, group, line);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test('a no-context suppression records what its lengths were written after', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-contexts-'));
+  try {
+    writeFileSync(join(root, 'a.css'), [
+      '.a { border: 1px solid red; }',
+      '.b { border: 2px solid red; }',
+      '.c { box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); }',
+      '.d { --gutter-x: 3px; }',
+    ].join('\n'));
+    writeFileSync(join(root, 'b.tsx'), 'const s = { boxShadow: "0 1px 2px black", WebkitBackdropFilter: "blur(3px)" };\n<div className="ring-[3px]" />\n');
+    const profile = { styling: { tokenSource: [] }, tokens: {} };
+    const { suppressed } = scanRepo(root, profile, {});
+    const entry = suppressed.find((s) => s.reason === 'no-context');
+    assert.deepEqual(entry.contexts, [
+      { context: 'box-shadow', count: 4 },
+      { context: 'border', count: 2 },
+      { context: '-webkit-backdrop-filter', count: 1 },
+      { context: 'custom property', count: 1 },
+      { context: 'ring-[', count: 1 },
+    ]);
+    assert.equal(entry.distinctContexts, 5);
+    assert.equal('contextCounts' in entry, false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

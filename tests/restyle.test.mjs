@@ -257,7 +257,33 @@ test('renderPlan groups substitutions by file and cites the exact position', () 
 
 test('renderPlan says why each manual item was left alone, with the token to use', () => {
   const out = renderPlan(samplePlan());
-  assert.match(out, /`src\/C\.tsx:3` — `#3b7d4f` → `--color-primary`: arbitrary-utility-value/);
+  assert.match(out, /### arbitrary-utility-value \(1\)\n\n- `src\/C\.tsx:3` — `#3b7d4f` → `--color-primary`/);
+});
+
+// Forty rows for one white with one suggested token read as forty decisions.
+test('renderPlan folds a repeated manual literal into one row with every place', () => {
+  const row = (file, line, value, nearestToken, reason) => ({ id: 'UX-101', file, line, value, nearestToken, reason });
+  const out = renderPlan({
+    edits: [],
+    manual: [
+      row('src/A.tsx', 3, '#ffffff', '--background', 'theme-varying'),
+      row('src/B.tsx', 7, '#123456', null, 'no-token'),
+      row('src/A.tsx', 9, '#ffffff', '--background', 'theme-varying'),
+      row('src/B.tsx', 4, '#ffffff', '--background', 'theme-varying'),
+      row('src/C.tsx', 2, '#000000', '--foreground', 'theme-varying'),
+    ],
+    judgment: [],
+  });
+  assert.match(out, /### theme-varying \(4\)\n\n- `#ffffff` → `--background` ×3 — `src\/A\.tsx` L3, L9 · `src\/B\.tsx` L4\n- `src\/C\.tsx:2` — `#000000` → `--foreground`\n/);
+  assert.match(out, /### no-token \(1\)\n\n- `src\/B\.tsx:7` — `#123456`\n/);
+  assert.ok(out.indexOf('### theme-varying') < out.indexOf('### no-token'), 'the larger group comes first');
+});
+
+test('renderPlan folds a repeated substitution within a file into one row', () => {
+  const edit = (line, column) => ({ id: 'UX-101', file: 'src/A.tsx', line, column, value: '#3b7d4f', token: '--color-primary', replacement: 'var(--color-primary)' });
+  const out = renderPlan({ edits: [edit(4, 22), edit(9, 3)], manual: [], judgment: [] });
+  assert.match(out, /- L4:22, L9:3 `#3b7d4f` → `var\(--color-primary\)` \(UX-101\)/);
+  assert.match(out, /2 substitutions in 1 file/);
 });
 
 test('renderPlan lists judgment findings without proposing an edit', () => {
@@ -507,4 +533,66 @@ test('the plan writes the hsl() form for a bare-channel token', () => {
     const { edits } = planSubstitutions(envelope, { root, colorTokens: { '--background': '0 0% 100%' } });
     assert.deepEqual(edits.map((e) => e.replacement), ['hsl(var(--background))']);
   });
+});
+
+// Opting in lets a theme-varying token through when the literal matches its
+// default-theme value, and the edit carries what it becomes elsewhere. The
+// value compared is the default theme's, not whichever block came last.
+test('with --adopt-theme a theme-varying token is applied against its default value', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-adopt-'));
+  try {
+    const line = '.a { background-color: #ffffff; color: #111111; }';
+    writeFileSync(join(root, 'a.css'), `${line}\n`);
+    const finding = (value) => ({
+      id: 'UX-101', source: 'scanner', file: 'a.css', line: 1, column: line.indexOf(value) + 1,
+      value, kind: 'color', nearestToken: '--x',
+    });
+    const envelope = { findings: [finding('#ffffff'), finding('#111111')] };
+    const options = {
+      root,
+      colorTokens: { '--background': '222 47% 11%', '--foreground': '#eeeeee' },
+      themedTokens: ['--background', '--foreground'],
+      themeValues: new Map([
+        ['--background', { base: '0 0% 100%', others: ['222 47% 11%'] }],
+        ['--foreground', { base: null, others: ['#111111', '#eeeeee'] }],
+      ]),
+    };
+
+    const off = planSubstitutions(envelope, options);
+    assert.equal(off.edits.length, 0);
+    // #111111 is near --background's dark value, and far from its default
+    // one: theme-varying, and not adoptable.
+    assert.deepEqual(off.manual.map((r) => [r.reason, Boolean(r.adoptable)]), [['theme-varying', true], ['theme-varying', false]]);
+
+    const on = planSubstitutions(envelope, { ...options, adoptTheme: true });
+    assert.deepEqual(on.edits.map((e) => [e.value, e.replacement, e.otherThemes]), [
+      ['#ffffff', 'hsl(var(--background))', ['222 47% 11%']],
+    ]);
+    assert.deepEqual(on.manual.map((r) => r.reason), ['no-token'], 'measured against the default value, #111111 matches nothing');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('renderPlan names what an adopted token becomes in the other themes', () => {
+  const out = renderPlan({
+    edits: [{ id: 'UX-101', file: 'a.css', line: 1, column: 24, value: '#ffffff', token: '--background', replacement: 'hsl(var(--background))', otherThemes: ['222 47% 11%'] }],
+    manual: [{ id: 'UX-101', file: 'b.css', line: 2, value: '#fff', nearestToken: '--card', reason: 'theme-varying', adoptable: true }],
+    judgment: [],
+  });
+  assert.match(out, /1 substitution in 1 file · 1 of them changes in other themes · 1 needs a human/);
+  assert.match(out, /`#ffffff` → `hsl\(var\(--background\)\)` \(UX-101\) — other themes: `222 47% 11%`/);
+  assert.match(out, /1 of these matches a theme-varying token in the default theme\. `--adopt-theme` substitutes it/);
+});
+
+test('a theme-varying token with no default-theme value is never adopted', () => {
+  const tokens = { '--fg': '#f1f5f9' };
+  assert.deepEqual(
+    chooseColourToken({ value: '#f1f5f9', property: 'color', tokens, themed: ['--fg'], themeBase: new Map() }),
+    { manual: true, reason: 'theme-varying', token: '--fg' },
+  );
+  assert.deepEqual(
+    chooseColourToken({ value: '#f1f5f9', property: 'color', tokens, themed: ['--fg'], themeBase: new Map([['--fg', '#f1f5f9']]) }),
+    { token: '--fg', adopted: true },
+  );
 });

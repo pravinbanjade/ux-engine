@@ -65,6 +65,59 @@ export function themedTokenNames(cssTexts) {
   return [...all].filter(([, set]) => set.size > 1).map(([name]) => name).sort();
 }
 
+// For every custom property declared in more than one theme: its value in
+// the default theme, and the distinct values it takes anywhere else. The
+// default theme is a declaration in a plain `:root`, `html` or `@theme`
+// block, optionally inside a cascade layer — not `:root.dark`, not inside a
+// media query, not under a class. `base` is null when no such declaration exists, because then
+// there is no theme a literal could be said to match.
+//
+// /ux-restyle uses this to substitute a theme-varying token when asked to:
+// the element looks the same in the default theme and follows the token in
+// the others, and the plan names what it becomes there.
+const DEFAULT_THEME = /^(?::root|html|@theme\b[^{]*)$/;
+
+export function themeValues(cssTexts) {
+  const all = new Map();
+  const record = (name, value, isBase) => {
+    if (!all.has(name)) all.set(name, { base: null, values: new Map() });
+    const entry = all.get(name);
+    const key = value.replace(/\s+/g, ' ').toLowerCase();
+    if (!entry.values.has(key)) entry.values.set(key, value);
+    if (isBase) entry.base = value;
+  };
+  for (const raw of cssTexts) {
+    const css = raw.replace(/\/\*[\s\S]*?\*\//g, '');
+    const stack = [];
+    let start = 0;
+    for (let i = 0; i < css.length; i += 1) {
+      const c = css[i];
+      if (c !== '{' && c !== '}' && c !== ';') continue;
+      const text = css.slice(start, i).trim();
+      start = i + 1;
+      if (c === '{') {
+        stack.push(text.replace(/\s+/g, ' '));
+        continue;
+      }
+      const m = /^(--[A-Za-z0-9_-]+)\s*:\s*([\s\S]+)$/.exec(text);
+      if (m && stack.length) {
+        // A cascade layer orders rules without scoping them: shadcn's
+        // `@layer base { :root { … } }` is the default theme all the same.
+        const scope = stack.filter((selector) => !/^@layer\b/.test(selector));
+        record(m[1], m[2].trim(), scope.length === 1 && DEFAULT_THEME.test(scope[0]));
+      }
+      if (c === '}') stack.pop();
+    }
+  }
+  const out = new Map();
+  for (const [name, { base, values }] of all) {
+    if (values.size < 2) continue;
+    const baseKey = base?.replace(/\s+/g, ' ').toLowerCase();
+    out.set(name, { base, others: [...values].filter(([key]) => key !== baseKey).map(([, v]) => v) });
+  }
+  return out;
+}
+
 const NAME_RULES = [
   [/color|colour|bg|background|fg|foreground|border-color|accent|brand/, 'color'],
   [/radius|rounded/, 'radius'],
