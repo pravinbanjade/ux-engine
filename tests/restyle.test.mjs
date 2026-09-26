@@ -257,7 +257,33 @@ test('renderPlan groups substitutions by file and cites the exact position', () 
 
 test('renderPlan says why each manual item was left alone, with the token to use', () => {
   const out = renderPlan(samplePlan());
-  assert.match(out, /`src\/C\.tsx:3` — `#3b7d4f` → `--color-primary`: arbitrary-utility-value/);
+  assert.match(out, /### arbitrary-utility-value \(1\)\n\n- `src\/C\.tsx:3` — `#3b7d4f` → `--color-primary`/);
+});
+
+// Forty rows for one white with one suggested token read as forty decisions.
+test('renderPlan folds a repeated manual literal into one row with every place', () => {
+  const row = (file, line, value, nearestToken, reason) => ({ id: 'UX-101', file, line, value, nearestToken, reason });
+  const out = renderPlan({
+    edits: [],
+    manual: [
+      row('src/A.tsx', 3, '#ffffff', '--background', 'theme-varying'),
+      row('src/B.tsx', 7, '#123456', null, 'no-token'),
+      row('src/A.tsx', 9, '#ffffff', '--background', 'theme-varying'),
+      row('src/B.tsx', 4, '#ffffff', '--background', 'theme-varying'),
+      row('src/C.tsx', 2, '#000000', '--foreground', 'theme-varying'),
+    ],
+    judgment: [],
+  });
+  assert.match(out, /### theme-varying \(4\)\n\n- `#ffffff` → `--background` ×3 — `src\/A\.tsx` L3, L9 · `src\/B\.tsx` L4\n- `src\/C\.tsx:2` — `#000000` → `--foreground`\n/);
+  assert.match(out, /### no-token \(1\)\n\n- `src\/B\.tsx:7` — `#123456`\n/);
+  assert.ok(out.indexOf('### theme-varying') < out.indexOf('### no-token'), 'the larger group comes first');
+});
+
+test('renderPlan folds a repeated substitution within a file into one row', () => {
+  const edit = (line, column) => ({ id: 'UX-101', file: 'src/A.tsx', line, column, value: '#3b7d4f', token: '--color-primary', replacement: 'var(--color-primary)' });
+  const out = renderPlan({ edits: [edit(4, 22), edit(9, 3)], manual: [], judgment: [] });
+  assert.match(out, /- L4:22, L9:3 `#3b7d4f` → `var\(--color-primary\)` \(UX-101\)/);
+  assert.match(out, /2 substitutions in 1 file/);
 });
 
 test('renderPlan lists judgment findings without proposing an edit', () => {

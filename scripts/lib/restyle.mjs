@@ -378,6 +378,17 @@ export function applyEdits(edits, { root, dryRun = false }) {
   return { files, failed, applied: files.reduce((n, f) => n + f.edits, 0) };
 }
 
+// Groups in order of first appearance, each in its original order.
+function groupBy(rows, key) {
+  const groups = new Map();
+  for (const row of rows) {
+    const k = key(row);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(row);
+  }
+  return [...groups.values()];
+}
+
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 const cite = (row) => (row.line === null || row.line === undefined
@@ -409,22 +420,44 @@ export function renderPlan({ edits, manual, judgment }) {
     }
     for (const [file, list] of byFile) {
       out.push(`### \`${file}\``, '');
-      for (const edit of list) {
-        out.push(`- L${edit.line}:${edit.column} \`${edit.value}\` → \`${edit.replacement}\` (${edit.id})`);
+      // The same literal becoming the same reference is one decision however
+      // many times the file repeats it, so it is one row with every position.
+      for (const same of groupBy(list, (e) => `${e.id}|${e.value}|${e.replacement}`)) {
+        const at = same.map((e) => `L${e.line}:${e.column}`).join(', ');
+        out.push(`- ${at} \`${same[0].value}\` → \`${same[0].replacement}\` (${same[0].id})`);
       }
       out.push('');
     }
   }
 
   // Manual rows still carry the answer — the token to use — so this list is
-  // a work queue, not a shrug.
+  // a work queue, not a shrug. It is grouped by why each row was left alone,
+  // because that is what decides what the reader does with it, and then by
+  // literal and token: one white written forty times with the same suggested
+  // token is one decision, and forty rows made it look like forty.
   if (manual.length) {
     out.push('## Needs a human', '');
-    for (const row of manual) {
-      const target = row.nearestToken ? ` → \`${row.nearestToken}\`` : '';
-      out.push(`- ${cite(row)} — \`${row.value}\`${target}: ${row.reason}`);
+    const byReason = groupBy(manual, (row) => row.reason).sort((a, b) => b.length - a.length);
+    for (const rows of byReason) {
+      out.push(`### ${rows[0].reason} (${rows.length})`, '');
+      const byLiteral = groupBy(rows, (row) => `${row.value}|${row.nearestToken ?? ''}`)
+        .sort((a, b) => b.length - a.length);
+      for (const same of byLiteral) {
+        const target = same[0].nearestToken ? ` → \`${same[0].nearestToken}\`` : '';
+        if (same.length === 1) {
+          out.push(`- ${cite(same[0])} — \`${same[0].value}\`${target}`);
+          continue;
+        }
+        const places = groupBy(same, (row) => row.file)
+          .map((inFile) => {
+            const lines = inFile.filter((row) => row.line !== null && row.line !== undefined).map((row) => `L${row.line}`);
+            return lines.length ? `\`${inFile[0].file}\` ${lines.join(', ')}` : `\`${inFile[0].file}\``;
+          })
+          .join(' · ');
+        out.push(`- \`${same[0].value}\`${target} ×${same.length} — ${places}`);
+      }
+      out.push('');
     }
-    out.push('');
   }
 
   if (judgment.length) {
