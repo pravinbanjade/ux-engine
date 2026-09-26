@@ -22,7 +22,8 @@
     ],
     "tokenSyntax": "@theme",
     "utilityFirst": true,
-    "extraStylesheets": []
+    "extraStylesheets": [],
+    "themedTokens": []
   },
   "components": {
     "dir": "src/components/ui",

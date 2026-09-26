@@ -20,7 +20,8 @@
     "utilityFirst": false,
     "extraStylesheets": [
       "src/components/Button.module.css"
-    ]
+    ],
+    "themedTokens": []
   },
   "components": {
     "dir": "src/components",

@@ -26,9 +26,13 @@ The scripts need Node.js 20 or later on your `PATH`.
 3. `/ux-audit [path]` — audit existing UI. Read-only.
 4. `/ux-review [base]` — audit only what the working diff touched. Cheap enough
    to run before every commit; exits non-zero on a high-severity finding.
-5. `/ux-restyle [path]` — repair what an audit found. Off-system literals are
-   substituted for their nearest token by a script, after you approve the
-   plan; anything needing judgment is proposed, not applied.
+5. `/ux-restyle [path]` — repair what an audit found. After you approve the
+   plan, a script replaces an off-system literal with a token only when the
+   page would look the same afterwards. The colour has to match to within
+   about the smallest visible difference. The token has to suit the property
+   (a text token for text) and must not be a status, component-specific or
+   theme-varying token. Everything else is proposed with a suggested token,
+   not applied.
 
 ## What it writes into your repo
 

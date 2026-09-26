@@ -12,7 +12,8 @@
     "tokenSource": [],
     "tokenSyntax": null,
     "utilityFirst": false,
-    "extraStylesheets": []
+    "extraStylesheets": [],
+    "themedTokens": []
   },
   "components": {
     "dir": "src/components",

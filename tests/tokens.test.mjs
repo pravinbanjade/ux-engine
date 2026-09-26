@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { extractBlocks, extractCustomProperties, categorizeToken, groupTokens, isUsableScale, MIN_SCALE_VALUES, nameKind } from '../scripts/lib/tokens.mjs';
+import { extractBlocks, extractCustomProperties, categorizeToken, groupTokens, isUsableScale, MIN_SCALE_VALUES, nameKind, themedTokenNames } from '../scripts/lib/tokens.mjs';
 
 const tailwindCss = readFileSync(fileURLToPath(new URL('../tests/fixtures/tailwind-shadcn/src/styles/app.css', import.meta.url)), 'utf8');
 const cssModulesCss = readFileSync(fileURLToPath(new URL('../tests/fixtures/css-modules/src/styles/tokens.css', import.meta.url)), 'utf8');
@@ -188,4 +188,18 @@ test('nameKind reports a name rule\'s group, or null when only the value decides
   assert.equal(nameKind('--space-4'), 'spacing');
   assert.equal(nameKind('--container-lg'), 'sizing');
   assert.equal(nameKind('--wrap-max'), null);
+});
+
+test('a token declared with different values in different blocks is themed', () => {
+  const css = [
+    ':root { --fg: #0f172a; --radius: 8px; --same: #fff; }',
+    '.dark { --fg: #f1f5f9; --same: #FFF; }',
+    '@media (prefers-color-scheme: dark) { :root { --bg: #000; } }',
+    ':root { --bg: #fff; }',
+  ].join('\n');
+  assert.deepEqual(themedTokenNames([css]), ['--bg', '--fg']);
+});
+
+test('themed tokens are found across token files', () => {
+  assert.deepEqual(themedTokenNames([':root { --a: 1px; }', '[data-theme="x"] { --a: 2px; }']), ['--a']);
 });
