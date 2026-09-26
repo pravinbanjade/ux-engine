@@ -1,5 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { parseColor, deltaE } from './color.mjs';
+import { DEFAULT_THRESHOLDS } from './scanner.mjs';
 
 // A utility class's arbitrary value — bg-[#3b7d4f], p-[17px] — is the one
 // context that looks substitutable and is not: turning it into a utility
@@ -83,6 +85,136 @@ function packageOf(file, root, memo) {
   }
 }
 
+// The scanner hands every colour the token nearest in colour, and nearness
+// is all it knows: `#ffffff` under `background-color` went to
+// `--status-empty-bg` because that was the only parseable white in the set,
+// and a restyle would have written a status token into a page background.
+// Two things a token's name says, that its value cannot:
+//
+// - what it is for: a `-fg`/`-foreground`/`text-` token paints text, a
+//   `-bg`/`surface`/`card` token fills a box, a `border`/`ring`/`input`
+//   token draws an edge. The last role word wins, so `--card-foreground`
+//   is text on a card.
+// - whether it carries meaning: a `status`, `success` or `error` token says
+//   something about the state of what it colours, and reusing it because
+//   the number fits says that thing where it is not true.
+//
+// So the choice is made among every token close enough, not just the
+// nearest: tokens whose role contradicts the property's are out, state
+// tokens are never applied mechanically, a token whose role matches beats
+// one with no role, and distance breaks ties. When only a contradicting or
+// state token is close, the finding goes to a human with it as the
+// suggestion — the number may be right and the meaning may still be wrong.
+const ROLE_SEGMENTS = [
+  ['fg', /^(?:fg|foreground|text|ink)$/],
+  ['bg', /^(?:bg|background|surface|card|popover|paper\d*|canvas|backdrop)$/],
+  ['border', /^(?:border|outline|ring|divider|separator|stroke|input)$/],
+];
+const STATE_SEGMENT = /^(?:status|success|danger|error|warning|warn|info|destructive|critical|positive|negative)$/;
+
+// A system token's name is a role, a variant and perhaps a hue or a step:
+// `--text-muted`, `--color-primary-300`, `--navy-dark`. A segment outside that
+// vocabulary names the component or the domain the token was made for —
+// `--chip-academic-accent`, `--calendar-cell-holiday-bg`, `--loyalty-border`
+// — and reusing one elsewhere because the colour fits ties an unrelated
+// element to that component's next redesign. A short first segment is a
+// namespace (`--y-indigo-soft`), not a component. The list is deliberately
+// closed: an unfamiliar word costs a suggestion instead of an edit, which is
+// the cheap direction to be wrong in.
+const GENERIC_SEGMENT = new RegExp(`^(?:${[
+  'color', 'colour', 'app', 'page', 'body', 'ui', 'sys', 'global', 'theme',
+  'primary', 'secondary', 'tertiary', 'accent', 'muted', 'subtle', 'faint', 'strong', 'soft',
+  'light', 'lighter', 'lightest', 'dark', 'darker', 'darkest', 'deep', 'bright', 'pale',
+  'hover', 'active', 'focus', 'pressed', 'disabled', 'inverse', 'inverted', 'default', 'base',
+  'brand', 'neutral', 'emphasis', 'contrast', 'alt', 'main', 'on', 'weak', 'mid', 'medium',
+  'low', 'high', 'raised', 'sunken', 'elevated', 'overlay', 'sm', 'md', 'lg', 'xl',
+  'red', 'orange', 'amber', 'yellow', 'lime', 'green', 'emerald', 'teal', 'cyan', 'sky', 'blue',
+  'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose', 'slate', 'gray', 'grey', 'zinc',
+  'stone', 'navy', 'white', 'black', 'graphite', 'steel', 'silver', 'gold', 'cream', 'sand',
+  'olive', 'maroon', 'coral', 'mint',
+].join('|')}|\\d+)$`);
+
+export function isScopedToken(name) {
+  return segments(name).some((segment, i) => {
+    if (i === 0 && segment.length <= 2) return false;
+    if (STATE_SEGMENT.test(segment) || GENERIC_SEGMENT.test(segment)) return false;
+    return !ROLE_SEGMENTS.some(([, re]) => re.test(segment));
+  });
+}
+
+const PROPERTY_ROLE = new Map([
+  ...['color', 'caret-color', 'text-decoration-color', 'text-emphasis-color', '-webkit-text-fill-color', '-webkit-text-stroke-color']
+    .map((p) => [p, 'fg']),
+  ...['background', 'background-color', 'background-image'].map((p) => [p, 'bg']),
+].map(([p, role]) => [p.replace(/-/g, ''), role]));
+
+function propertyRole(property) {
+  const key = property.replace(/-/g, '').toLowerCase();
+  if (PROPERTY_ROLE.has(key)) return PROPERTY_ROLE.get(key);
+  if (/^(?:border|outline|columnrule)/.test(key)) return 'border';
+  return null;
+}
+
+function segments(name) {
+  return name.replace(/^--/, '').toLowerCase().split(/[-_]/);
+}
+
+export function tokenRole(name) {
+  let role = null;
+  for (const segment of segments(name)) {
+    for (const [r, re] of ROLE_SEGMENTS) if (re.test(segment)) role = r;
+  }
+  return role;
+}
+
+export function isStateToken(name) {
+  return segments(name).some((segment) => STATE_SEGMENT.test(segment));
+}
+
+// Close enough to report is not close enough to write. The scanner's
+// threshold decides which token a finding names, and at 0.10 it pairs `#fff`
+// with an orange tint and a slate grey with a dark teal: fair suggestions,
+// visible changes. A mechanical substitution promises the page looks the
+// same afterwards, so it is held to about the smallest difference a person
+// can see in this colour space; anything further is a design decision and
+// goes to a human with the suggestion.
+export const EXACT_COLOR = 0.02;
+
+export function chooseColourToken({ value, property, tokens, themed = [], threshold = DEFAULT_THRESHOLDS.color }) {
+  const themedSet = new Set(themed);
+  const literal = parseColor(value);
+  if (!literal) return { manual: true, reason: 'no-token', token: null };
+  const close = [];
+  for (const [name, tokenValue] of Object.entries(tokens)) {
+    const parsed = parseColor(tokenValue);
+    if (!parsed) continue;
+    const distance = deltaE(literal, parsed);
+    if (distance <= threshold) {
+      close.push({
+        name, distance, role: tokenRole(name), state: isStateToken(name),
+        scoped: isScopedToken(name), themed: themedSet.has(name),
+      });
+    }
+  }
+  if (!close.length) return { manual: true, reason: 'no-token', token: null };
+  close.sort((a, b) => (a.distance - b.distance) || a.name.localeCompare(b.name));
+
+  const wanted = propertyRole(property);
+  const contradicts = (t) => Boolean(wanted && t.role && t.role !== wanted);
+  const eligible = close.filter((t) => !t.state && !t.scoped && !t.themed && !contradicts(t));
+  if (!eligible.length) {
+    const t = close[0];
+    let reason = 'role-mismatch';
+    if (t.state) reason = 'semantic-token';
+    else if (t.scoped) reason = 'scoped-token';
+    else if (t.themed) reason = 'theme-varying';
+    return { manual: true, reason, token: t.name };
+  }
+  const best = (wanted && eligible.find((t) => t.role === wanted)) || eligible[0];
+  if (best.distance > EXACT_COLOR) return { manual: true, reason: 'approximate', token: best.name };
+  return { token: best.name };
+}
+
 // A file that renders somewhere other than the DOM takes style objects that
 // look exactly like CSS and never see a stylesheet: a PDF document, a native
 // view, a terminal, a WebGL scene. `color: '#0F172A'` in a PDF renderer's
@@ -92,7 +224,7 @@ function packageOf(file, root, memo) {
 // file, from its imports, because that is where the renderer is named.
 const NON_DOM_RENDERER = /(?:\bfrom\s*|\brequire\(\s*|\bimport\s*\(?\s*)['"](?:@react-pdf\/renderer|react-native(?:-[\w-]+)?|@react-three\/[\w-]+|ink|pdfkit|jspdf|@shopify\/react-native-skia|expo(?:-[\w-]+)?)(?:\/[^'"]*)?['"]/;
 
-export function planSubstitutions(envelope, { root, tokenSource = [] }) {
+export function planSubstitutions(envelope, { root, tokenSource = [], colorTokens = null, themedTokens = [] }) {
   const edits = [];
   const manual = [];
   const judgment = [];
@@ -165,14 +297,25 @@ export function planSubstitutions(envelope, { root, tokenSource = [] }) {
       continue;
     }
 
+    let token = finding.nearestToken;
+    if (finding.kind === 'color' && colorTokens) {
+      const property = PROPERTY_BEFORE.exec(lineText.slice(0, finding.column - 1))?.[1] ?? '';
+      const choice = chooseColourToken({ value: finding.value, property, tokens: colorTokens, themed: themedTokens });
+      if (choice.manual) {
+        manual.push({ ...finding, nearestToken: choice.token ?? finding.nearestToken, reason: choice.reason });
+        continue;
+      }
+      token = choice.token;
+    }
+
     edits.push({
       id: finding.id,
       file: finding.file,
       line: finding.line,
       column: finding.column,
       value: finding.value,
-      token: finding.nearestToken,
-      replacement: result.text,
+      token,
+      replacement: `var(${token})`,
     });
   }
 

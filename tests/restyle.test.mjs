@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { substitutionFor, planSubstitutions, applyEdits, renderPlan } from '../scripts/lib/restyle.mjs';
+import { substitutionFor, planSubstitutions, applyEdits, renderPlan, chooseColourToken, tokenRole, isStateToken, isScopedToken } from '../scripts/lib/restyle.mjs';
 
 const at = (lineText, value, token) => substitutionFor({
   lineText,
@@ -381,4 +381,102 @@ test('a package whose name only starts like a renderer is not one', () => {
     const envelope = { findings: [scannerFinding({ file: 'src/A.tsx', line: 2, column: dom.indexOf('#3b7d4f') + 1 })] };
     assert.equal(planSubstitutions(envelope, { root }).edits.length, 1);
   });
+});
+
+test('a token\'s role is the last role word in its name', () => {
+  assert.equal(tokenRole('--card'), 'bg');
+  assert.equal(tokenRole('--card-foreground'), 'fg');
+  assert.equal(tokenRole('--text-primary'), 'fg');
+  assert.equal(tokenRole('--bg-card'), 'bg');
+  assert.equal(tokenRole('--status-success-bg'), 'bg');
+  assert.equal(tokenRole('--color-border-subtle'), 'border');
+  assert.equal(tokenRole('--primary'), null);
+  assert.equal(tokenRole('--chip-holiday-accent'), null);
+});
+
+test('state tokens are recognised by a whole name segment', () => {
+  assert.ok(isStateToken('--status-empty-bg'));
+  assert.ok(isStateToken('--destructive-foreground'));
+  assert.ok(isStateToken('--color-error'));
+  assert.ok(!isStateToken('--background'));
+  assert.ok(!isStateToken('--information-architecture-bg'), 'a longer word containing "info" is not a state');
+});
+
+// The real case: school-mgmt's only parseable white was a status token,
+// because its --background is written as raw channels.
+test('a status token is never applied mechanically, only suggested', () => {
+  const tokens = { '--background': '0 0% 100%', '--status-empty-bg': '#ffffff', '--status-empty-fg': '#64748b' };
+  assert.deepEqual(
+    chooseColourToken({ value: '#ffffff', property: 'background-color', tokens }),
+    { manual: true, reason: 'semantic-token', token: '--status-empty-bg' },
+  );
+});
+
+test('a token for another role is never applied, even when it is nearer', () => {
+  const tokens = { '--card-foreground': '#ffffff', '--surface': '#fdfdfd' };
+  assert.deepEqual(chooseColourToken({ value: '#ffffff', property: 'backgroundColor', tokens }), { token: '--surface' });
+  assert.deepEqual(
+    chooseColourToken({ value: '#ffffff', property: 'color', tokens: { '--surface': '#ffffff' } }),
+    { manual: true, reason: 'role-mismatch', token: '--surface' },
+  );
+});
+
+test('a matching role beats a nearer token with no role; distance breaks ties', () => {
+  const tokens = { '--primary': '#3b7d4f', '--text-brand': '#3b7d4e', '--text-brand-2': '#3b7d4e' };
+  assert.deepEqual(chooseColourToken({ value: '#3b7d4f', property: 'color', tokens }), { token: '--text-brand' });
+  assert.deepEqual(chooseColourToken({ value: '#3b7d4f', property: 'fill', tokens }), { token: '--primary' });
+});
+
+test('border properties take border tokens', () => {
+  const tokens = { '--bg-subtle': '#e2e8f0', '--border': '#e2e8f1' };
+  assert.deepEqual(chooseColourToken({ value: '#e2e8f0', property: 'border-bottom-color', tokens }), { token: '--border' });
+  assert.deepEqual(chooseColourToken({ value: '#e2e8f0', property: 'border', tokens }), { token: '--border' });
+});
+
+test('the plan applies the role-aware choice and sends a status match to a human', () => {
+  const bg = "const a = { backgroundColor: '#ffffff' };";
+  const fg = "const b = { color: '#0f172a' };";
+  withRepo({ 'src/A.tsx': `${bg}\n${fg}\n` }, (root) => {
+    const colorTokens = { '--status-empty-bg': '#ffffff', '--foreground': '#0f172a', '--bg-slate': '#0f172a' };
+    const envelope = { findings: [
+      scannerFinding({ value: '#ffffff', nearestToken: '--status-empty-bg', column: bg.indexOf('#ffffff') + 1 }),
+      scannerFinding({ value: '#0f172a', line: 2, nearestToken: '--bg-slate', column: fg.indexOf('#0f172a') + 1 }),
+    ] };
+    const { edits, manual } = planSubstitutions(envelope, { root, colorTokens });
+    assert.deepEqual(edits.map((e) => [e.line, e.token, e.replacement]), [[2, '--foreground', 'var(--foreground)']]);
+    assert.deepEqual(manual.map((m) => [m.line, m.reason, m.nearestToken]), [[1, 'semantic-token', '--status-empty-bg']]);
+  });
+});
+
+test('a close but visible difference is suggested, not written', () => {
+  // Measured pairs from real repositories: white against an orange tint, a
+  // slate grey against a dark teal, two different greens against one brand.
+  for (const [value, token] of [['#fff', '#fff7ed'], ['#64748b', '#0f766e'], ['#4ade80', '#25d366']]) {
+    assert.deepEqual(
+      chooseColourToken({ value, property: 'fill', tokens: { '--t': token } }),
+      { manual: true, reason: 'approximate', token: '--t' },
+    );
+  }
+  assert.deepEqual(chooseColourToken({ value: '#71717a', property: 'fill', tokens: { '--t': '#6b7280' } }), { token: '--t' });
+});
+
+test('a component-scoped token is suggested, not written', () => {
+  assert.deepEqual(
+    chooseColourToken({ value: '#3b82f6', property: 'color', tokens: { '--chip-academic-accent': '#3b82f6' } }),
+    { manual: true, reason: 'scoped-token', token: '--chip-academic-accent' },
+  );
+  assert.ok(isScopedToken('--calendar-cell-holiday-bg'));
+  assert.ok(isScopedToken('--sidebar-bg'));
+  for (const name of ['--color-primary-300', '--text-muted', '--y-indigo-soft', '--app-bg', '--navy-dark', '--card-foreground']) {
+    assert.ok(!isScopedToken(name), `${name} is a system token`);
+  }
+});
+
+test('a token that changes with the theme is suggested, not written', () => {
+  const tokens = { '--text-primary': '#f1f5f9', '--black': '#000000' };
+  assert.deepEqual(
+    chooseColourToken({ value: '#f1f5f9', property: 'color', tokens, themed: ['--text-primary'] }),
+    { manual: true, reason: 'theme-varying', token: '--text-primary' },
+  );
+  assert.deepEqual(chooseColourToken({ value: '#000000', property: 'color', tokens, themed: ['--text-primary'] }), { token: '--black' });
 });

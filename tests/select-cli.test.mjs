@@ -77,3 +77,27 @@ test('no flags at all lists the whole catalog', () => {
   assert.equal(result.status, 0);
   assert.ok(result.stdout.trim().split('\n').length >= 25);
 });
+
+// An audit of a varied folder selects most of the catalog. Screening by
+// Signal in one call is what keeps it from opening ~100 files to rule each
+// one out.
+test('--signals prints each candidate with its file and Signal', () => {
+  const result = run('--kinds', 'list', '--signals');
+  assert.equal(result.status, 0, result.stderr);
+  const blocks = result.stdout.trim().split('\n\n');
+  assert.equal(blocks.length, run('--kinds', 'list').stdout.trim().split('\n').length);
+  for (const block of blocks) {
+    const [head, file, signal] = block.split('\n');
+    assert.match(head, /^UX-\d{3} \| /);
+    const id = head.split(' | ')[0];
+    assert.match(file, new RegExp(`^  file: .*/skills/failure-modes/references/${id}-[a-z0-9-]+\\.md$`));
+    assert.match(signal, /^  signal: \S.{100,}$/, `${id} has no usable Signal line`);
+  }
+});
+
+test('--signals composes with the other flags in any position', () => {
+  const a = run('--signals', '--kinds', 'form', '--exclude-detection', 'scanner,conformance').stdout;
+  const b = run('--kinds', 'form', '--exclude-detection', 'scanner,conformance', '--signals').stdout;
+  assert.equal(a, b);
+  assert.ok(!a.includes('| scanner |'));
+});

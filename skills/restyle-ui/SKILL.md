@@ -84,6 +84,25 @@ Each row names the token to use and why the script would not write it:
   scene. Its style objects look like CSS, but `var()` resolves to nothing
   there. The fix is a JS constant exported beside the tokens, if the user
   wants one, not a CSS variable.
+- `semantic-token` — the only close token is a state token (`status`,
+  `success`, `error` and so on). The colour matches, but using it would claim
+  a state the element may not have. Ask whether the element really shows
+  that state. If it does not, the design system is missing a neutral token
+  for this colour.
+- `role-mismatch` — the only close token is meant for a different property,
+  such as a text token for a background. Suggest the user add a token for
+  this role rather than borrow one.
+- `approximate` — the suggested token is close but visibly different. The
+  script substitutes a colour only when the difference is too small to see
+  (about 0.02 in OKLab), so that a restyle never changes how the page looks.
+  Show the user both colours and let them choose.
+- `scoped-token` — the only close token was made for a specific component
+  or domain, such as `--chip-academic-accent`. Reusing it elsewhere ties this
+  element to that component's next redesign.
+- `theme-varying` — the token takes different values in different themes,
+  but the literal is the same in all of them. Substituting it changes how
+  the element looks in the other theme, such as white text going dark in
+  light mode. Check both themes with the user before applying.
 - `moved` — the file changed after the scan. Re-run step 3.
 - `no-token` — nothing in the token set is close enough. This is a signal to
   add a token, not to force a match.

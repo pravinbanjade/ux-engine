@@ -65,7 +65,12 @@ if (Number(envelope.version) > ENVELOPE_VERSION) {
 
 // 4. Plan first: it writes nothing, and the working-tree check below needs
 // to know which files are actually in play.
-const plan = planSubstitutions(envelope, { root, tokenSource: profile.styling.tokenSource ?? [] });
+const plan = planSubstitutions(envelope, {
+  root,
+  tokenSource: profile.styling.tokenSource ?? [],
+  colorTokens: profile.tokens?.color ?? null,
+  themedTokens: profile.styling.themedTokens ?? [],
+});
 
 // 5. The review mechanism after a restyle is `git diff`, and it is worthless
 // mixed with unrelated work. Outside a git repo there is nothing to protect,

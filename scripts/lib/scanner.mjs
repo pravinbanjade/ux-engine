@@ -411,6 +411,16 @@ function contextHint(line, matchIndex) {
 // exactly {line, value, kind} — unchanged, so every existing caller and
 // test keeps working) and scanRepo (which additionally needs each length
 // literal's context hint to narrow which token group it's matched against).
+// A token reference, with or without a fallback. The fallback in
+// `var(--bg-white, #fff)` is the value the token stands for, written where
+// the token is used so the element still renders if the stylesheet does not
+// load — it is on-system by construction. Blanking only the bare form made
+// every such fallback a finding, and a restyle then offered to write
+// `var(--bg-white, var(--surface))`. One level of nested parentheses covers
+// a colour-function fallback (`var(--c, rgb(0 0 0 / 50%))`) and a nested
+// reference (`var(--a, var(--b))`).
+const VAR_REFERENCE = /var\(--[A-Za-z0-9_-]+(?:\s*,(?:[^()]|\([^()]*\))*)?\)/g;
+
 function scanLiterals(text) {
   const out = [];
   text.split('\n').forEach((raw, index) => {
@@ -427,7 +437,7 @@ function scanLiterals(text) {
     // still there — `calc(var(--r)-1px)` subtracts from a token.
     const line = raw
       .replace(ARITHMETIC_OPERATOR, ' ')
-      .replace(/var\(--[A-Za-z0-9_-]+\)/g, (ref) => ' '.repeat(ref.length));
+      .replace(VAR_REFERENCE, (ref) => ' '.repeat(ref.length));
     for (const { kind, re, validate } of PATTERNS) {
       re.lastIndex = 0;
       let m;

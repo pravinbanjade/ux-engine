@@ -10,7 +10,9 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const cli = join(repoRoot, 'scripts/restyle.mjs');
 const profileSnapshot = join(repoRoot, 'tests/snapshots/tailwind-shadcn.profile.json');
 
-const OFFENDING_LINE = "const s = { color: '#3b7d4f', padding: '17px' };";
+// The colour is a hand-written copy of --color-primary (distance 0.001):
+// restyle writes a colour token only when the page would look the same.
+const OFFENDING_LINE = "const s = { color: '#03893e', padding: '17px' };";
 
 // A git repo holding one offending file, a DESIGN.md and a profile, with
 // everything committed so the working tree starts clean.

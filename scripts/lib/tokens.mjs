@@ -32,6 +32,39 @@ export function extractCustomProperties(css) {
   return props;
 }
 
+// Every declaration of every custom property in a stylesheet, wherever it
+// sits: the base block, `.dark`, `[data-theme="dark"]`, a media query. The
+// token groups above read only `:root` and `@theme`, and there the last value
+// wins, so a token that is near-black in light mode and near-white in dark
+// mode is recorded as whichever came last. A literal written in its place is
+// the same colour in both themes; the token is not, and substituting one for
+// the other changes what the element looks like in the theme nobody was
+// looking at — white text on a dark button that turns near-black in light
+// mode, on a light button, and disappears.
+export function declaredValues(css) {
+  const values = new Map();
+  const re = /(--[A-Za-z0-9_-]+)\s*:\s*([^;}]+)(?=[;}])/g;
+  let m;
+  while ((m = re.exec(css))) {
+    const value = m[2].trim().replace(/\s+/g, ' ').toLowerCase();
+    if (!values.has(m[1])) values.set(m[1], new Set());
+    values.get(m[1]).add(value);
+  }
+  return values;
+}
+
+// The names declared with more than one distinct value, sorted.
+export function themedTokenNames(cssTexts) {
+  const all = new Map();
+  for (const css of cssTexts) {
+    for (const [name, set] of declaredValues(css)) {
+      if (!all.has(name)) all.set(name, new Set());
+      for (const v of set) all.get(name).add(v);
+    }
+  }
+  return [...all].filter(([, set]) => set.size > 1).map(([name]) => name).sort();
+}
+
 const NAME_RULES = [
   [/color|colour|bg|background|fg|foreground|border-color|accent|brand/, 'color'],
   [/radius|rounded/, 'radius'],

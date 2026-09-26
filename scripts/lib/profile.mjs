@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve, relative, isAbsolute, sep } from 'node:path';
-import { extractCustomProperties, groupTokens, TOKEN_KINDS } from './tokens.mjs';
+import { extractCustomProperties, groupTokens, themedTokenNames, TOKEN_KINDS } from './tokens.mjs';
 import { readManifest, detectStyling, detectComponents, detectConventions } from './detect.mjs';
 
 export const SCHEMA_VERSION = 1;
@@ -160,6 +160,7 @@ export function buildProfile(root, { now = new Date().toISOString(), overrides =
   const tokenSourceCandidates = safeOverrides['styling.tokenSource'] ?? styling.tokenSource;
   const tokenSource = [];
   let props = {};
+  const tokenCss = [];
   for (const file of tokenSourceCandidates) {
     const full = resolve(join(root, file));
     let realFull;
@@ -185,9 +186,14 @@ export function buildProfile(root, { now = new Date().toISOString(), overrides =
       continue;
     }
     tokenSource.push(file);
-    props = { ...props, ...extractCustomProperties(readFileSync(realFull, 'utf8')) };
+    const css = readFileSync(realFull, 'utf8');
+    tokenCss.push(css);
+    props = { ...props, ...extractCustomProperties(css) };
   }
   const tokens = groupTokens(props);
+  // Recorded beside the source list, not inside `tokens`: it is a fact about
+  // how the token files declare them, and /ux-restyle is the one reader.
+  styling.themedTokens = themedTokenNames(tokenCss);
 
   // If a human override named styling.tokenSource, what ends up recorded on
   // the profile must be the same sanitized list used above — an escaping or
