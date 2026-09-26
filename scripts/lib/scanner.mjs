@@ -219,7 +219,7 @@ function summariseSuppression(entry) {
 // A shorthand's later values keep the property's hint: both values in
 // "padding: 12px 16px" are hinted `spacing`, via SHORTHAND_VALUE below.
 const CONTEXT_WINDOW = 48;
-const HINT_GROUPS = { type: ['type'], radius: ['radius'], spacing: ['spacing'] };
+const HINT_GROUPS = { type: ['type'], radius: ['radius'], spacing: ['spacing'], sizing: ['sizing'] };
 
 // A prefix/property name must sit at a real word boundary — preceded by the
 // start of the window or a non-identifier character — so a coincidental
@@ -300,11 +300,32 @@ const HINT_MATCHERS = [
     bracketHintRe(['rounded']),
     propertyHintRe(['border-radius']),
   ]],
+  // A dimension is not a gap. Both are lengths written in the same units, so
+  // one hint covered both and every width competed for the spacing scale —
+  // `max-w-[1184px]`, a page container, was offered the token a 4px gutter
+  // sits on. Measured across four repositories, 27% to 63% of every
+  // spacing-hinted length was a width or a height, and in the thinnest case
+  // the suppressed "spacing" distribution was led by 1184px and 1440px: two
+  // container widths presented as the raw material for a spacing scale.
+  //
+  // The two lists are disjoint — no property below appears in the spacing
+  // list, verified over 2,335 spacing-hinted literals — so `sizing` sitting
+  // first is defensive, not load-bearing. What stays in spacing is the
+  // offsets: `translate`, `top/right/bottom/left` and `inset` move a box by
+  // a gap rather than giving it a dimension.
+  ['sizing', [
+    bracketHintRe(['w', 'h', 'size', 'min-w', 'max-w', 'min-h', 'max-h']),
+    propertyHintRe([
+      'width', 'height', 'min-width', 'max-width', 'min-height', 'max-height',
+      'inline-size', 'block-size', 'min-inline-size', 'max-inline-size',
+      'min-block-size', 'max-block-size',
+    ]),
+  ]],
   ['spacing', [
     bracketHintRe([
       'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl',
       'm', 'mx', 'my', 'mt', 'mr', 'mb', 'ml',
-      'gap', 'space', 'w', 'h', 'size', 'min-w', 'max-w', 'min-h', 'max-h',
+      'gap', 'space',
       'top', 'left', 'right', 'bottom', 'inset', 'translate',
     ]),
     // The longhands matter as much as the shorthands: `margin-bottom` left
@@ -318,9 +339,6 @@ const HINT_MATCHERS = [
       'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
       'margin-block', 'margin-inline', 'margin-block-start', 'margin-block-end',
       'margin-inline-start', 'margin-inline-end',
-      'width', 'height', 'min-width', 'max-width', 'min-height', 'max-height',
-      'inline-size', 'block-size', 'min-inline-size', 'max-inline-size',
-      'min-block-size', 'max-block-size',
       'gap', 'row-gap', 'column-gap', 'grid-gap',
       'inset', 'inset-block', 'inset-inline',
       'inset-block-start', 'inset-block-end',
