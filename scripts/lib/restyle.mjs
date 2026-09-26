@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { parseColor, deltaE } from './color.mjs';
+import { parseColor, deltaE, tokenColorFor, isChannelColor } from './color.mjs';
 import { DEFAULT_THRESHOLDS } from './scanner.mjs';
 
 // A utility class's arbitrary value — bg-[#3b7d4f], p-[17px] — is the one
@@ -186,7 +186,7 @@ export function chooseColourToken({ value, property, tokens, themed = [], thresh
   if (!literal) return { manual: true, reason: 'no-token', token: null };
   const close = [];
   for (const [name, tokenValue] of Object.entries(tokens)) {
-    const parsed = parseColor(tokenValue);
+    const parsed = tokenColorFor(literal, tokenValue);
     if (!parsed) continue;
     const distance = deltaE(literal, parsed);
     if (distance <= threshold) {
@@ -213,6 +213,16 @@ export function chooseColourToken({ value, property, tokens, themed = [], thresh
   const best = (wanted && eligible.find((t) => t.role === wanted)) || eligible[0];
   if (best.distance > EXACT_COLOR) return { manual: true, reason: 'approximate', token: best.name };
   return { token: best.name };
+}
+
+// How a colour token is referenced. A full colour value is the variable
+// itself; a bare-channel token is only its three components and has to be
+// wrapped, with the literal's own opacity when it had one — that is how a
+// codebase built on channel tokens writes a translucent colour.
+export function colourReference(token, tokenValue, literal) {
+  if (!isChannelColor(tokenValue ?? '')) return `var(${token})`;
+  const alpha = parseColor(literal)?.alpha ?? 1;
+  return alpha === 1 ? `hsl(var(${token}))` : `hsl(var(${token}) / ${Number(alpha.toFixed(3))})`;
 }
 
 // A file that renders somewhere other than the DOM takes style objects that
@@ -298,6 +308,7 @@ export function planSubstitutions(envelope, { root, tokenSource = [], colorToken
     }
 
     let token = finding.nearestToken;
+    let replacement = null;
     if (finding.kind === 'color' && colorTokens) {
       const property = PROPERTY_BEFORE.exec(lineText.slice(0, finding.column - 1))?.[1] ?? '';
       const choice = chooseColourToken({ value: finding.value, property, tokens: colorTokens, themed: themedTokens });
@@ -306,6 +317,7 @@ export function planSubstitutions(envelope, { root, tokenSource = [], colorToken
         continue;
       }
       token = choice.token;
+      replacement = colourReference(token, colorTokens[token], finding.value);
     }
 
     edits.push({
@@ -315,7 +327,7 @@ export function planSubstitutions(envelope, { root, tokenSource = [], colorToken
       column: finding.column,
       value: finding.value,
       token,
-      replacement: `var(${token})`,
+      replacement: replacement ?? `var(${token})`,
     });
   }
 

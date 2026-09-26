@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { substitutionFor, planSubstitutions, applyEdits, renderPlan, chooseColourToken, tokenRole, isStateToken, isScopedToken } from '../scripts/lib/restyle.mjs';
+import { substitutionFor, planSubstitutions, applyEdits, renderPlan, chooseColourToken, tokenRole, isStateToken, isScopedToken, colourReference } from '../scripts/lib/restyle.mjs';
 
 const at = (lineText, value, token) => substitutionFor({
   lineText,
@@ -402,10 +402,11 @@ test('state tokens are recognised by a whole name segment', () => {
   assert.ok(!isStateToken('--information-architecture-bg'), 'a longer word containing "info" is not a state');
 });
 
-// The real case: school-mgmt's only parseable white was a status token,
-// because its --background is written as raw channels.
+// The real case: school-mgmt's only parseable white was a status token.
+// Its --background was then unreadable raw channels; a value no parser reads
+// stands in for that here.
 test('a status token is never applied mechanically, only suggested', () => {
-  const tokens = { '--background': '0 0% 100%', '--status-empty-bg': '#ffffff', '--status-empty-fg': '#64748b' };
+  const tokens = { '--background': 'var(--base-white)', '--status-empty-bg': '#ffffff', '--status-empty-fg': '#64748b' };
   assert.deepEqual(
     chooseColourToken({ value: '#ffffff', property: 'background-color', tokens }),
     { manual: true, reason: 'semantic-token', token: '--status-empty-bg' },
@@ -479,4 +480,31 @@ test('a token that changes with the theme is suggested, not written', () => {
     { manual: true, reason: 'theme-varying', token: '--text-primary' },
   );
   assert.deepEqual(chooseColourToken({ value: '#000000', property: 'color', tokens, themed: ['--text-primary'] }), { token: '--black' });
+});
+
+// With its base tokens readable, the same repository's white matches
+// --background, and the status token is no longer the only candidate.
+test('a bare-channel token is a candidate, and beats a status token', () => {
+  const tokens = { '--background': '0 0% 100%', '--status-empty-bg': '#ffffff' };
+  assert.deepEqual(chooseColourToken({ value: '#ffffff', property: 'background-color', tokens }), { token: '--background' });
+});
+
+test('a translucent literal matches a bare-channel token at its own opacity', () => {
+  const tokens = { '--primary': '222.2 47.4% 11.2%', '--solid': '#0f172a' };
+  assert.deepEqual(chooseColourToken({ value: 'rgb(15 23 42 / 0.5)', property: 'fill', tokens }), { token: '--primary' });
+});
+
+test('a bare-channel token is referenced through hsl(), with the literal\'s opacity', () => {
+  assert.equal(colourReference('--background', '0 0% 100%', '#ffffff'), 'hsl(var(--background))');
+  assert.equal(colourReference('--primary', '222.2 47.4% 11.2%', 'rgba(15, 23, 42, 0.5)'), 'hsl(var(--primary) / 0.5)');
+  assert.equal(colourReference('--brand', '#3b7d4f', '#3b7d4f'), 'var(--brand)');
+});
+
+test('the plan writes the hsl() form for a bare-channel token', () => {
+  const line = "const s = { backgroundColor: '#ffffff' };";
+  withRepo({ 'src/A.tsx': `${line}\n` }, (root) => {
+    const envelope = { findings: [scannerFinding({ value: '#ffffff', nearestToken: '--background', column: line.indexOf('#ffffff') + 1 })] };
+    const { edits } = planSubstitutions(envelope, { root, colorTokens: { '--background': '0 0% 100%' } });
+    assert.deepEqual(edits.map((e) => e.replacement), ['hsl(var(--background))']);
+  });
 });

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { walkFiles } from './detect.mjs';
-import { parseColor, deltaE, parseScalar, scalarDistance } from './color.mjs';
+import { parseColor, deltaE, parseScalar, scalarDistance, tokenColorFor } from './color.mjs';
 import { isUsableScale, nameKind } from './tokens.mjs';
 
 export const DEFAULT_THRESHOLDS = { color: 0.10, scalar: 0.15 };
@@ -483,7 +483,7 @@ export function nearestToken(literal, tokens, thresholds) {
     let distance = null;
     if (literal.kind === 'color') {
       const a = parseColor(literal.value);
-      const b = parseColor(value);
+      const b = tokenColorFor(a, value);
       if (a && b) distance = deltaE(a, b);
       if (distance !== null && distance > thresholds.color) distance = null;
     } else {
