@@ -187,7 +187,7 @@ test('modeIndex fix line is a whole paragraph, not a wrapped fragment', () => {
   }
 });
 
-import { CATEGORY_RANGES, APPLIES_TO, CATEGORIES } from '../scripts/lib/library.mjs';
+import { CATEGORY_RANGES, CATALOG_SIZE, APPLIES_TO, CATEGORIES } from '../scripts/lib/library.mjs';
 
 // A mode file body long enough to clear every section minimum, so these tests
 // isolate the rule under test instead of tripping the length floors.
@@ -200,17 +200,36 @@ const fileOf = (front, bodyOpts) => ({
   text: `---\nid: ${front.id}\ntitle: ${front.title ?? 'A title'}\ncategory: ${front.category}\nseverity: ${front.severity ?? 'medium'}\ndetection: ${front.detection ?? 'model'}\nappliesTo: [${(front.appliesTo ?? ['table']).join(', ')}]\n---\n${bodyOf(bodyOpts)}`,
 });
 
-test('CATEGORY_RANGES covers 001-120 with no gaps or overlaps', () => {
+test('CATEGORY_RANGES covers 001-CATALOG_SIZE with no gaps or overlaps', () => {
   const covered = new Set();
-  for (const [category, [lo, hi]] of Object.entries(CATEGORY_RANGES)) {
+  for (const [category, ranges] of Object.entries(CATEGORY_RANGES)) {
     assert.ok(CATEGORIES.includes(category), `unknown category ${category}`);
-    for (let n = lo; n <= hi; n++) {
-      assert.ok(!covered.has(n), `${n} claimed twice`);
-      covered.add(n);
+    for (const [lo, hi] of ranges) {
+      for (let n = lo; n <= hi; n++) {
+        assert.ok(!covered.has(n), `${n} claimed twice`);
+        covered.add(n);
+      }
     }
   }
-  assert.equal(covered.size, 120);
-  for (let n = 1; n <= 120; n++) assert.ok(covered.has(n), `${n} uncovered`);
+  assert.equal(covered.size, CATALOG_SIZE);
+  for (let n = 1; n <= CATALOG_SIZE; n++) assert.ok(covered.has(n), `${n} uncovered`);
+});
+
+// Published IDs never move. A category that outgrows its block takes a new
+// one at the end; the blocks it already had keep their numbers.
+test('the conformance block keeps the numbers it was published with', () => {
+  assert.deepEqual(CATEGORY_RANGES.conformance, [[111, 120]]);
+  assert.deepEqual(CATEGORY_RANGES['system-consistency'][0], [101, 110]);
+});
+
+test('an ID in a category\'s second range is accepted', () => {
+  const errors = validateModeFile(fileOf({ id: 'UX-121', category: 'system-consistency' }));
+  assert.deepEqual(errors, []);
+});
+
+test('an out-of-range error names every range the category owns', () => {
+  const errors = validateModeFile(fileOf({ id: 'UX-115', category: 'system-consistency' }));
+  assert.ok(errors.some((e) => e.includes('101-110, 121-123')), errors.join('\n'));
 });
 
 test('a mode whose ID falls outside its category range is rejected', () => {
