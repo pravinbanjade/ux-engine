@@ -39,6 +39,15 @@ The scripts need Node.js 20 or later on your `PATH`.
 | `.ux-engine/findings.json` | The most recent audit or review, in the findings envelope format. |
 | `.ux-engine/wireframes/<slug>.json` | One per screen `/ux-design` has built: the intent you answered, the structure you approved, and every correction you made. |
 
+## What it runs
+
+The commands run the Node.js scripts in `scripts/` against your working tree.
+They read your source files, run `git diff`, `git ls-files` and
+`git status` to scope a review or check a restyle, and write only the paths in
+the table above — plus your source files during `/ux-restyle`, after you
+approve the plan. Nothing is fetched, installed, or sent over the network, and
+the plugin declares no hooks and no MCP servers.
+
 ## Deliberate exceptions
 
 Add one line per exception under `## Deliberate Exceptions` in `DESIGN.md`:
