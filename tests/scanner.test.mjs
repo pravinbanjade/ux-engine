@@ -1422,3 +1422,20 @@ test('a sizing suppression with nothing misfiled carries no unclaimed list', () 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// Found by the restyle pass on a stylesheet written `var(--border, #e2e8f0)`
+// throughout: every fallback was a finding, and the plan offered to replace
+// the fallback of a token reference with another token reference.
+test('a token reference\'s fallback is not a literal', () => {
+  assert.deepEqual(findLiterals([
+    '  background-color: var(--bg-white, #fff);',
+    '  border: 1px solid var(--border, #e2e8f0);',
+    '  color: var(--fg, rgb(0 0 0 / 50%));',
+    '  padding: var(--a, var(--b, 12px));',
+    '',
+  ].join('\n')), [{ line: 2, value: '1px', kind: 'length' }]);
+});
+
+test('a literal after a token reference on the same line is still found', () => {
+  assert.deepEqual(findLiterals('  border: var(--w, 1px) solid #123456;\n'), [{ line: 1, value: '#123456', kind: 'color' }]);
+});
