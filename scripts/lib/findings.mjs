@@ -178,15 +178,31 @@ export function renderReport(envelope, modes) {
     out.push('No findings.', '');
   }
 
+  // A mode's fix is the same paragraph for every row that cites it, and an
+  // audit of 112 high findings printed it 112 times: a 124KB report, most of
+  // it repetition. It is printed under the mode's first row only. Rows that
+  // say exactly the same thing about the same line — two identical literals
+  // in one declaration — are one row with a count, not two rows a reader
+  // takes for a duplication bug.
+  const fixShown = new Set();
   for (const severity of ['high', 'medium', 'low']) {
     const group = envelope.findings.filter((x) => x.severity === severity);
     if (!group.length) continue;
     out.push(`## ${LABEL[severity]}`, '');
+    const rows = new Map();
     for (const finding of group) {
-      out.push(`- **${finding.id}** · ${cite(finding)} — ${finding.message}`);
+      const key = [finding.id, finding.file, finding.line, finding.message, finding.evidence ?? ''].join('\u0000');
+      if (rows.has(key)) rows.get(key).count += 1;
+      else rows.set(key, { finding, count: 1 });
+    }
+    for (const { finding, count } of rows.values()) {
+      out.push(`- **${finding.id}** · ${cite(finding)} — ${finding.message}${count > 1 ? ` (×${count})` : ''}`);
       if (finding.evidence) out.push(`  - Evidence: ${finding.evidence}`);
       const fix = modes.get(finding.id)?.fix;
-      if (fix) out.push(`  - Fix: ${fix}`);
+      if (fix && !fixShown.has(finding.id)) {
+        out.push(`  - Fix: ${fix}`);
+        fixShown.add(finding.id);
+      }
     }
     out.push('');
   }

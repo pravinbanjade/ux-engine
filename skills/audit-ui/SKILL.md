@@ -103,12 +103,22 @@ cannot do: deciding whether a component actually exhibits a failure mode.
    The script writes the full report to `<repo-root>/.ux-engine/report.md`
    as well as printing it. Present it without re-ranking or re-wording:
    - **20 findings or fewer:** show the report as printed.
-   - **More than 20:** show the summary line, then every High row exactly as
-     printed, then one line per Medium and Low mode with its count. End
-     with the path to `report.md` for the rest.
+   - **More than 20:** show the summary line exactly as printed. Then
+     give one line per mode, in the report's order (High first), in this
+     form:
 
-   An excerpt quotes rows. It never paraphrases them, merges them, or
-   replaces a row with your own description of it.
+     `**UX-NNN** ×<count> — <the mode's first row, exactly as printed>`
+
+     End with the path to `report.md` for the rest.
+
+   An excerpt quotes rows. It never paraphrases them, and it never puts two
+   modes on one line: `UX-019/UX-020/UX-060 (5× each)` hides two of the
+   three. Do not describe the summary's counts in your own words either.
+   "5 suppressed" counts scanner suppressions, not deliberate exceptions,
+   and the report's Suppressed section says what each one is. You may add
+   one short paragraph after the excerpt naming patterns that repeat
+   across files, such as the same missing focus trap in every modal.
+   Label it as your reading.
 
 ## What not to do
 

@@ -33,12 +33,20 @@ not interchangeable:
 2. **Confirm `DESIGN.md` exists.** Absent → stop. Restyling without a recorded
    design system is churn, and the script refuses anyway.
 
-3. **Produce fresh findings.** Run the scanner over the scope to a temp file
-   (`node ${CLAUDE_PLUGIN_ROOT}/scripts/scan-off-system.mjs`), then
-   `node ${CLAUDE_PLUGIN_ROOT}/scripts/report-findings.mjs` with
-   `--out <temp>/findings.json`. **Do not reuse an existing
-   `.ux-engine/findings.json`** — a finding's line is only true of the tree it
-   was measured against.
+3. **Produce fresh findings.** Make a temp directory, then run:
+
+   ```
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/scan-off-system.mjs \
+     --profile <repo-root>/.ux-engine/profile.json --root <repo-root> \
+     [--path <dir>] > <temp>/scan.json
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/report-findings.mjs \
+     --scanner <temp>/scan.json --profile <repo-root>/.ux-engine/profile.json \
+     --root <repo-root> --scope path [--path <dir>] \
+     --out <temp>/findings.json --report <temp>/report.md
+   ```
+
+   **Do not reuse an existing `.ux-engine/findings.json`** — a finding's line
+   is only true of the tree it was measured against.
 
 4. **Preview.** Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/restyle.mjs --findings
    <temp>/findings.json --profile <repo-root>/.ux-engine/profile.json --root
@@ -77,7 +85,16 @@ not interchangeable:
 
 ## Reading the plan's "Needs a human" list
 
-Each row names the token to use and why the script would not write it:
+Each row names the token to use and why the script would not write it.
+
+A row marked **(same value)** names a token that holds the literal's own
+value. Applying it by hand leaves the page looking the same, and the
+reason is only about meaning: a status token, a component's token, a
+theme. Any row without the mark changes how the page looks if applied.
+Never call a set of manual rows safe, or offer to apply them in bulk,
+unless every row in it is marked. For an unmarked row, say what it
+changes, such as "`#2c5282` becomes the lighter `--chip-neutral-fg`",
+and let the user decide row by row or group by group.
 
 - `arbitrary-utility-value` — the literal sits inside a utility class's
   arbitrary-value bracket. Rewriting it to a utility name needs a mapping from

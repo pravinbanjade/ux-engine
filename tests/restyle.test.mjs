@@ -435,7 +435,7 @@ test('a status token is never applied mechanically, only suggested', () => {
   const tokens = { '--background': 'var(--base-white)', '--status-empty-bg': '#ffffff', '--status-empty-fg': '#64748b' };
   assert.deepEqual(
     chooseColourToken({ value: '#ffffff', property: 'background-color', tokens }),
-    { manual: true, reason: 'semantic-token', token: '--status-empty-bg' },
+    { manual: true, reason: 'semantic-token', token: '--status-empty-bg', same: true },
   );
 });
 
@@ -444,7 +444,7 @@ test('a token for another role is never applied, even when it is nearer', () => 
   assert.deepEqual(chooseColourToken({ value: '#ffffff', property: 'backgroundColor', tokens }), { token: '--surface' });
   assert.deepEqual(
     chooseColourToken({ value: '#ffffff', property: 'color', tokens: { '--surface': '#ffffff' } }),
-    { manual: true, reason: 'role-mismatch', token: '--surface' },
+    { manual: true, reason: 'role-mismatch', token: '--surface', same: true },
   );
 });
 
@@ -482,7 +482,7 @@ test('a close but visible difference is suggested, not written', () => {
   for (const [value, token] of [['#fff', '#fff7ed'], ['#64748b', '#0f766e'], ['#4ade80', '#25d366'], ['#71717a', '#6b7280']]) {
     assert.deepEqual(
       chooseColourToken({ value, property: 'fill', tokens: { '--t': token } }),
-      { manual: true, reason: 'approximate', token: '--t' },
+      { manual: true, reason: 'approximate', token: '--t', same: false },
     );
   }
   assert.deepEqual(chooseColourToken({ value: '#71717a', property: 'fill', tokens: { '--t': '#71717b' } }), { token: '--t' });
@@ -491,7 +491,7 @@ test('a close but visible difference is suggested, not written', () => {
 test('a component-scoped token is suggested, not written', () => {
   assert.deepEqual(
     chooseColourToken({ value: '#3b82f6', property: 'color', tokens: { '--chip-academic-accent': '#3b82f6' } }),
-    { manual: true, reason: 'scoped-token', token: '--chip-academic-accent' },
+    { manual: true, reason: 'scoped-token', token: '--chip-academic-accent', same: true },
   );
   assert.ok(isScopedToken('--calendar-cell-holiday-bg'));
   assert.ok(isScopedToken('--sidebar-bg'));
@@ -504,7 +504,7 @@ test('a token that changes with the theme is suggested, not written', () => {
   const tokens = { '--text-primary': '#f1f5f9', '--black': '#000000' };
   assert.deepEqual(
     chooseColourToken({ value: '#f1f5f9', property: 'color', tokens, themed: ['--text-primary'] }),
-    { manual: true, reason: 'theme-varying', token: '--text-primary' },
+    { manual: true, reason: 'theme-varying', token: '--text-primary', same: true },
   );
   assert.deepEqual(chooseColourToken({ value: '#000000', property: 'color', tokens, themed: ['--text-primary'] }), { token: '--black' });
 });
@@ -569,7 +569,8 @@ test('with --adopt-theme a theme-varying token is applied against its default va
     assert.deepEqual(on.edits.map((e) => [e.value, e.replacement, e.otherThemes]), [
       ['#ffffff', 'hsl(var(--background))', ['222 47% 11%']],
     ]);
-    assert.deepEqual(on.manual.map((r) => r.reason), ['no-token'], 'measured against the default value, #111111 matches nothing');
+    // A row the flag cannot apply keeps the suggestion it had without it.
+    assert.deepEqual(on.manual.map((r) => [r.value, r.reason, r.nearestToken]), [['#111111', 'theme-varying', '--background']]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -590,7 +591,7 @@ test('a theme-varying token with no default-theme value is never adopted', () =>
   const tokens = { '--fg': '#f1f5f9' };
   assert.deepEqual(
     chooseColourToken({ value: '#f1f5f9', property: 'color', tokens, themed: ['--fg'], themeBase: new Map() }),
-    { manual: true, reason: 'theme-varying', token: '--fg' },
+    { manual: true, reason: 'theme-varying', token: '--fg', same: true },
   );
   assert.deepEqual(
     chooseColourToken({ value: '#f1f5f9', property: 'color', tokens, themed: ['--fg'], themeBase: new Map([['--fg', '#f1f5f9']]) }),
@@ -654,6 +655,19 @@ test('a length with no token values to check is applied only at distance zero', 
 test('the exact-colour line stops a visible tint and keeps a near copy', () => {
   assert.equal(EXACT_COLOR, 0.01);
   const tokens = { '--surface': '240 5% 96.5%', '--white': '#ffffff' };
-  assert.deepEqual(chooseColourToken({ value: '#eff6ff', property: 'background', tokens }), { manual: true, reason: 'approximate', token: '--surface' });
+  assert.deepEqual(chooseColourToken({ value: '#eff6ff', property: 'background', tokens }), { manual: true, reason: 'approximate', token: '--surface', same: false });
   assert.deepEqual(chooseColourToken({ value: '#fcfcfc', property: 'background', tokens }), { token: '--white' });
+});
+
+test('a manual row says when its token is the literal\'s own value', () => {
+  const out = renderPlan({
+    edits: [],
+    manual: [
+      { id: 'UX-101', file: 'a.css', line: 1, value: '#3b82f6', nearestToken: '--chip-academic-accent', reason: 'scoped-token', same: true },
+      { id: 'UX-101', file: 'a.css', line: 2, value: '#2c5282', nearestToken: '--chip-neutral-fg', reason: 'scoped-token' },
+    ],
+    judgment: [],
+  });
+  assert.match(out, /`#3b82f6` → `--chip-academic-accent` \(same value\)/);
+  assert.doesNotMatch(out, /--chip-neutral-fg` \(same value\)/);
 });

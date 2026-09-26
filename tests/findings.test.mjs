@@ -513,6 +513,20 @@ test('a no-context entry with no kind still renders as lengths', () => {
 // A count cannot tell a gap in the hint table from a property no scale
 // covers. The contexts can, so they are shown, and the "more" figure keeps
 // a cut list from reading as the whole set.
+// 112 rows of one mode printed its fix 112 times.
+test('a mode\'s fix is printed once, under its first row', () => {
+  const row = (line) => ({ id: 'UX-046', source: 'model', severity: 'high', category: 'state-coverage', file: 'a.tsx', line, message: `m${line}` });
+  const report = renderReport(envelopeWith([row(1), row(2), row(3)]), modes);
+  assert.equal(report.split('  - Fix: ').length - 1, 1);
+});
+
+test('identical rows on one line are folded into one with a count', () => {
+  const row = { id: 'UX-101', source: 'scanner', severity: 'high', category: 'system-consistency', file: 'a.tsx', line: 237, message: 'Off-system colour `rgb(0 0 0 / 0.1)`' };
+  const report = renderReport(envelopeWith([row, { ...row }]), modes);
+  assert.match(report, /`a\.tsx:237` — Off-system colour `rgb\(0 0 0 \/ 0\.1\)` \(×2\)/);
+  assert.equal(report.split('a.tsx:237').length - 1, 1);
+});
+
 test('a no-context suppression lists the contexts it was made of', () => {
   const report = renderReport(envelopeWith([], {
     suppressed: [{

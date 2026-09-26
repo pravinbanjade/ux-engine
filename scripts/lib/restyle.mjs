@@ -237,20 +237,22 @@ export function chooseColourToken({ value, property, tokens, themed = [], thresh
   const wanted = propertyRole(property);
   const contradicts = (t) => Boolean(wanted && t.role && t.role !== wanted);
   const eligible = close.filter((t) => !t.state && !t.scoped && !t.themed && !contradicts(t));
+  // `same` says whether the suggested token is the literal's own colour, so
+  // a human applying a row by hand knows whether the page will change.
   if (!eligible.length) {
     const t = close[0];
     let reason = 'role-mismatch';
     if (t.state) reason = 'semantic-token';
     else if (t.scoped) reason = 'scoped-token';
     else if (t.themed) reason = 'theme-varying';
-    return { manual: true, reason, token: t.name };
+    return { manual: true, reason, token: t.name, same: t.distance <= EXACT_COLOR };
   }
   // Role breaks ties among tokens that would leave the page unchanged; it
   // does not outrank one. Preferring a role-matched `--surface` at 0.02 over
   // an exact `--white` gave up on a substitution the exact token allowed.
   const pick = (list) => (wanted && list.find((t) => t.role === wanted)) || list[0];
   const exact = eligible.filter((t) => t.distance <= EXACT_COLOR);
-  if (!exact.length) return { manual: true, reason: 'approximate', token: pick(eligible).name };
+  if (!exact.length) return { manual: true, reason: 'approximate', token: pick(eligible).name, same: false };
   const best = pick(exact);
   return best.adopted ? { token: best.name, adopted: true } : { token: best.name };
 }
@@ -357,7 +359,12 @@ export function planSubstitutions(envelope, {
       lineText, column: finding.column, value: finding.value, token: finding.nearestToken, kind: finding.kind,
     });
     if (result.manual) {
-      manual.push({ ...finding, reason: result.reason });
+      const row = { ...finding, reason: result.reason };
+      // The token named is the scanner's own nearest, so its distance says
+      // whether a hand edit would leave the page unchanged.
+      const same = finding.kind === 'color' ? finding.distance !== null && finding.distance <= EXACT_COLOR : finding.distance === 0;
+      if (same) row.same = true;
+      manual.push(row);
       continue;
     }
 
@@ -366,16 +373,25 @@ export function planSubstitutions(envelope, {
     let otherThemes = null;
     if (finding.kind === 'color' && colorTokens) {
       const property = PROPERTY_BEFORE.exec(lineText.slice(0, finding.column - 1))?.[1] ?? '';
+      // The choice is made without theme-varying tokens first, and the flag
+      // only rescues a row that choice left manual. Otherwise opting in
+      // re-ranked the suggestions on rows it did not apply: a themed
+      // `--border` measured at its default value displaced the
+      // `--chip-neutral-bg` a calendar cell had been offered.
       const ask = { value: finding.value, property, tokens: colorTokens, themed: themedTokens };
-      const choice = chooseColourToken({ ...ask, themeBase: adoptTheme ? themeBase : null });
-      if (choice.manual) {
-        const row = { ...finding, nearestToken: choice.token ?? finding.nearestToken, reason: choice.reason };
+      let choice = chooseColourToken(ask);
+      if (choice.manual && themeBase?.size) {
         // Not only `theme-varying` rows: a row is named for its nearest
         // token, and a themed token that matches exactly can sit behind a
         // nearer scoped or status one.
-        if (!adoptTheme && themeBase?.size && chooseColourToken({ ...ask, themeBase }).adopted) {
-          row.adoptable = true;
-        }
+        const adopted = chooseColourToken({ ...ask, themeBase });
+        if (adopted.adopted && adoptTheme) choice = adopted;
+        else if (adopted.adopted) choice = { ...choice, adoptable: true };
+      }
+      if (choice.manual) {
+        const row = { ...finding, nearestToken: choice.token ?? finding.nearestToken, reason: choice.reason };
+        if (choice.same) row.same = true;
+        if (choice.adoptable) row.adoptable = true;
         manual.push(row);
         continue;
       }
@@ -391,7 +407,9 @@ export function planSubstitutions(envelope, {
         ? checkScalar({ value: finding.value, tokenValue: group[token], varying: varying.has(token) })
         : (finding.distance === 0 ? null : 'approximate');
       if (reason) {
-        manual.push({ ...finding, reason });
+        const row = { ...finding, reason };
+        if (reason === 'varying-value' && checkScalar({ value: finding.value, tokenValue: group[token] }) === null) row.same = true;
+        manual.push(row);
         continue;
       }
     }
@@ -527,10 +545,10 @@ export function renderPlan({ edits, manual, judgment }) {
         const verb = adoptable === 1 ? 'matches' : 'match';
         out.push(`${adoptable} of these ${verb} a theme-varying token in the default theme. \`--adopt-theme\` substitutes ${adoptable === 1 ? 'it' : 'them'}, and the element then takes the token's value in the other themes.`, '');
       }
-      const byLiteral = groupBy(rows, (row) => `${row.value}|${row.nearestToken ?? ''}`)
+      const byLiteral = groupBy(rows, (row) => `${row.value}|${row.nearestToken ?? ''}|${Boolean(row.same)}`)
         .sort((a, b) => b.length - a.length);
       for (const same of byLiteral) {
-        const target = same[0].nearestToken ? ` → \`${same[0].nearestToken}\`` : '';
+        const target = same[0].nearestToken ? ` → \`${same[0].nearestToken}\`${same[0].same ? ' (same value)' : ''}` : '';
         if (same.length === 1) {
           out.push(`- ${cite(same[0])} — \`${same[0].value}\`${target}`);
           continue;
