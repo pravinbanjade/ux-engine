@@ -110,6 +110,15 @@ was actually answered, and deciding whether a structure serves the answer.
    off-system value you write here is a finding the enforcer will hand back to
    you in the next step.
 
+   Stay inside the package that holds the UI, which is the one containing
+   `profile.components.dir`. If the approved design needs a change anywhere
+   else, stop before writing it and ask. That covers a new API parameter, a
+   schema field or a server route. Name the file, the change, and what the
+   UI can and cannot do without it. The user asked for a screen, and a
+   change to their API is a separate decision with its own review. If they
+   decline, build the best version the current API supports, and say which
+   part of the wireframe it falls short of.
+
 2. **Build every state the wireframe describes.** A described state with no
    branch is UX-111, and it is the highest-severity thing this pipeline can
    produce, because the reviewer already agreed it was handled.
