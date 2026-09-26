@@ -3,3 +3,6 @@ dist/
 .DS_Store
 .superpowers/
 .ux-engine/findings.json
+graphify-out/
+docs/dogfood-*
+docs/superpowers/

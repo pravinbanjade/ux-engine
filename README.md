@@ -133,5 +133,4 @@ npm run lint:library  # every mode file well-formed, in range, and indexed
 npm run select -- --kinds table,form   # the modes that could apply to a surface
 ```
 
-Zero dependencies, runtime and dev. See `docs/superpowers/specs/` for the
-design.
+Zero dependencies, runtime and dev.
