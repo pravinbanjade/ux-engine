@@ -25,14 +25,16 @@ root.
 
 3. **Select library candidates.** Run
    `node ${CLAUDE_PLUGIN_ROOT}/scripts/select-modes.mjs --kinds <those kinds>
-   --exclude-detection scanner,conformance`. It prints one index line per
-   candidate; read only those files. `scanner` is excluded because step 1
+   --exclude-detection scanner,conformance --signals`. It prints each
+   candidate's index line, file path and Signal in one call. `scanner` is excluded because step 1
    already reported it, and `conformance` because step 5 below handles it
    against the wireframe rather than against the surface.
 
-4. **Read the selected mode files and judge.** Check the code against each
-   mode's Signal section and honour its Counter-example — a mode that names
-   the situation you are looking at as fine is not a finding.
+4. **Screen by Signal, then read the modes that survive.** Drop every
+   candidate whose Signal the code does not show, without opening its file.
+   Read the full file only for a mode whose Signal you can point to in the
+   code, and honour its Counter-example: a mode that names the situation
+   you are looking at as fine is not a finding.
 
 5. **Read the approved wireframe and check conformance.** This is the pass
    only you can do; the standing audit has no wireframe.

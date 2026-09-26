@@ -94,6 +94,7 @@ test('the audit skill excludes conformance and scanner modes when selecting', ()
   // has to remember to apply.
   const skill = readFileSync(fileURLToPath(new URL('../skills/audit-ui/SKILL.md', import.meta.url)), 'utf8');
   assert.match(skill, /--exclude-detection scanner,conformance/);
+  assert.match(skill, /--signals/, 'the audit should screen by Signal, not open a file per candidate');
   assert.ok(!/Read `\$\{CLAUDE_PLUGIN_ROOT\}\/skills\/failure-modes\/references\/INDEX\.md`/.test(skill),
     'the audit should select, not read the whole index');
 });
@@ -102,6 +103,7 @@ test('the enforcer selects rather than reading the whole index', () => {
   const agent = readFileSync(fileURLToPath(new URL('../agents/ux-system-enforcer.md', import.meta.url)), 'utf8');
   assert.match(agent, /select-modes\.mjs/);
   assert.match(agent, /--exclude-detection scanner,conformance/);
+  assert.match(agent, /--signals/, 'the enforcer should screen by Signal, not open a file per candidate');
 });
 
 test('the enforcer names every conformance mode', () => {

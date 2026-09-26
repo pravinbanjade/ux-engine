@@ -39,9 +39,12 @@ cannot do: deciding whether a component actually exhibits a failure mode.
 
 4. **Select candidates.**
    Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/select-modes.mjs --kinds
-   <the kinds you just named> --exclude-detection scanner,conformance`.
+   <the kinds you just named> --exclude-detection scanner,conformance
+   --signals`.
 
-   It prints one index line per candidate mode. Read only those. The two
+   It prints each candidate mode's index line, file path and Signal. A
+   folder with several kinds of surface commonly selects most of the catalog,
+   so this is the screening pass: one call instead of a file per mode. The two
    exclusions are not optional: `scanner` modes were already reported in step
    2, and `conformance` modes compare code against an approved wireframe,
    which only the generation command has — selecting one here would mean
@@ -52,11 +55,17 @@ cannot do: deciding whether a component actually exhibits a failure mode.
    the index, which holds 123 lines and would cost more context than the audit
    has to spare.
 
-5. **Read only the selected mode files, then judge.**
-   For each candidate mode, read its file and check the code against its
-   Signal section. Honour the Counter-example section: a mode that names the
-   situation you are looking at as fine is not a finding. Cite what you saw,
-   not what you assume.
+5. **Screen by Signal, then read only the modes that survive.**
+   Check the code against each candidate's Signal. Most will plainly not
+   apply, because nothing in the code has that shape. Drop those without
+   opening their files. For each mode whose Signal you can point to in a
+   specific file and line, read its full file before reporting. Honour the
+   Counter-example section: a mode that names the situation you are looking
+   at as fine is not a finding. Cite what you saw, not what you assume.
+
+   Do not open every candidate's file to be thorough. The Signal is the
+   whole test for whether a mode applies. The rest of the file tells you
+   whether a match is really a finding and what to say about it.
 
 6. **Write your findings as JSON.**
    One array, each row `{ "id": "UX-NNN", "file": "<repo-relative path>",
