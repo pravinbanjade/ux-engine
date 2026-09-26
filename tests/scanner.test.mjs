@@ -1423,6 +1423,23 @@ test('a sizing suppression with nothing misfiled carries no unclaimed list', () 
   }
 });
 
+// `--y-r: 10px` is a radius with a one-letter name. It is unclaimed, but no
+// container is 10px wide, and naming it sent the reader to the wrong token.
+test('a short unclaimed token is not offered as a missing dimension', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-unclaimed-short-'));
+  try {
+    writeFileSync(join(root, 'a.css'), '.a { max-width: 1184px; }\n');
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { spacing: { '--space-1': '4px', '--y-r': '10px', '--y-r-lg': '14px', '--shell': '60rem' } },
+    };
+    const { suppressed } = scanRepo(root, profile, {});
+    assert.deepEqual(suppressed.find((s) => s.id === 'UX-121').unclaimedTokens, ['--shell']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 // Found by the restyle pass on a stylesheet written `var(--border, #e2e8f0)`
 // throughout: every fallback was a finding, and the plan offered to replace
 // the fallback of a token reference with another token reference.

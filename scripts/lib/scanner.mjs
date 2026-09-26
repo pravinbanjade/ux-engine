@@ -509,10 +509,23 @@ function inScope(file, scope) {
 // alone. Every other token in the group was put there because its name says
 // spacing; these are the ones nothing vouched for, and so the only ones that
 // might be dimensions under another name.
+//
+// Only a length too long to be a gap qualifies. Unclaimed is not the same as
+// a dimension: `--y-r: 10px` is a radius under a one-letter name, and naming
+// it as the likely home of a repository's container widths sent the reader
+// looking in the wrong place. A container, a sidebar or a dialog is wider
+// than any step on a spacing scale, so the value is what separates them.
 const UNCLAIMED_SAMPLE = 8;
+const MIN_DIMENSION_PX = 48;
+const toPx = (value) => {
+  const scalar = parseScalar(value);
+  if (!scalar || !['px', 'rem', 'em'].includes(scalar.unit)) return null;
+  return scalar.unit === 'px' ? scalar.value : scalar.value * 16;
+};
 function unclaimedLengthTokens(tokens) {
-  return Object.keys(tokens?.spacing ?? {})
-    .filter((name) => nameKind(name) === null)
+  return Object.entries(tokens?.spacing ?? {})
+    .filter(([name, value]) => nameKind(name) === null && (toPx(value) ?? 0) >= MIN_DIMENSION_PX)
+    .map(([name]) => name)
     .sort()
     .slice(0, UNCLAIMED_SAMPLE);
 }
