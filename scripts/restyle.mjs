@@ -6,6 +6,7 @@ import { validateProfile } from './lib/profile.mjs';
 import { ENVELOPE_VERSION } from './lib/findings.mjs';
 import { scanRepo } from './lib/scanner.mjs';
 import { planSubstitutions, applyEdits, renderPlan } from './lib/restyle.mjs';
+import { themeValues } from './lib/tokens.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -14,7 +15,7 @@ const flag = (name, fallback) => {
 };
 const has = (name) => args.includes(`--${name}`);
 
-const USAGE = 'Usage: restyle.mjs --findings <json> --profile <path> [--root <dir>] [--design <path>] [--dry-run] [--allow-dirty] [--json]';
+const USAGE = 'Usage: restyle.mjs --findings <json> --profile <path> [--root <dir>] [--design <path>] [--dry-run] [--allow-dirty] [--adopt-theme] [--json]';
 
 const findingsPath = flag('findings');
 const profilePath = flag('profile');
@@ -65,11 +66,25 @@ if (Number(envelope.version) > ENVELOPE_VERSION) {
 
 // 4. Plan first: it writes nothing, and the working-tree check below needs
 // to know which files are actually in play.
+// What each theme-varying token is in the default theme and elsewhere, read
+// from the token files as they are now. A file that cannot be read adds
+// nothing, and a token it would have described stays a manual row.
+const tokenSource = profile.styling.tokenSource ?? [];
+const tokenCss = [];
+for (const file of tokenSource) {
+  try {
+    tokenCss.push(readFileSync(join(root, file), 'utf8'));
+  } catch {
+    // Reported by check-profile as a stale source; nothing to add here.
+  }
+}
 const plan = planSubstitutions(envelope, {
   root,
-  tokenSource: profile.styling.tokenSource ?? [],
+  tokenSource,
   colorTokens: profile.tokens?.color ?? null,
   themedTokens: profile.styling.themedTokens ?? [],
+  themeValues: themeValues(tokenCss),
+  adoptTheme: has('adopt-theme'),
 });
 
 // 5. The review mechanism after a restyle is `git diff`, and it is worthless

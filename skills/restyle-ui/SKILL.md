@@ -46,6 +46,20 @@ not interchangeable:
    If it exits 7, files the plan touches have uncommitted changes — show the
    user and let them commit, stash, or ask for `--allow-dirty`.
 
+   Rows the same literal repeats are folded into one, with every position
+   listed. Manual rows are grouped by reason.
+
+   **Theme-varying tokens are opt-in.** If the plan says some rows match a
+   theme-varying token in the default theme, tell the user how many, and
+   offer `--adopt-theme`. Say what it does in their terms: the element looks
+   the same in the default theme and follows the token in the others, so a
+   hard-coded white card turns dark in dark mode. That is usually the fix,
+   but not always. A brand button meant to look the same in every theme
+   gets worse. If they accept, run the dry run again with `--adopt-theme`.
+   Show the rows marked "other themes", which name each token's value
+   there, and get approval for that plan. Never add the flag unless the
+   user asks for it.
+
 5. **Apply.** On approval, run the same command without `--dry-run`. Report
    the verification line it prints. An exit of 6 means a literal survived its
    own substitution: that is a defect in the fixer, so report it rather than
@@ -102,7 +116,9 @@ Each row names the token to use and why the script would not write it:
 - `theme-varying` — the token takes different values in different themes,
   but the literal is the same in all of them. Substituting it changes how
   the element looks in the other theme, such as white text going dark in
-  light mode. Check both themes with the user before applying.
+  light mode. When the literal matches the token's default-theme value, the
+  section says how many, and `--adopt-theme` applies them after the user
+  agrees (step 4). The rest need a human to check both themes.
 - `moved` — the file changed after the scan. Re-run step 3.
 - `no-token` — nothing in the token set is close enough. This is a signal to
   add a token, not to force a match.

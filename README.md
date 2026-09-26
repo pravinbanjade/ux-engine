@@ -32,7 +32,9 @@ The scripts need Node.js 20 or later on your `PATH`.
    about the smallest visible difference. The token has to suit the property
    (a text token for text) and must not be a status, component-specific or
    theme-varying token. Everything else is proposed with a suggested token,
-   not applied.
+   not applied. With `--adopt-theme`, which the command offers and never
+   assumes, a theme-varying token is applied too when it matches the default
+   theme. The plan shows what each element becomes in the other themes.
 
 ## What it writes into your repo
 
