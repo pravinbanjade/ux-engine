@@ -373,30 +373,41 @@ test('scanRepo narrows a padding/sizing literal to the spacing token group', () 
   });
 });
 
-test('scanRepo narrows a Tailwind v4 "size-" literal to the spacing token group', () => {
+test('scanRepo narrows a Tailwind v4 "size-" literal to the sizing token group', () => {
   withTempRoot((root) => {
-    // Tailwind v4's `size-*` sets width and height together from one class.
+    // Tailwind v4's `size-*` sets width and height together from one class:
+    // a dimension, so it takes the sizing scale. The radius token is the
+    // decoy — an exact 10px match in a group this literal has no business
+    // being measured against, which is what the hint exists to rule out.
     writeFileSync(join(root, 'Foo.tsx'), 'const c = "size-[10px]";\n');
     const profile = {
       styling: { tokenSource: [] },
-      tokens: { radius: { '--radius': '10px' }, spacing: { '--space-3': '9px', '--space-8': '40px', '--space-12': '60px' } },
+      tokens: {
+        radius: { '--radius': '10px' },
+        spacing: { '--space-3': '9px', '--space-8': '40px', '--space-12': '60px' },
+        sizing: { '--w-sm': '11px', '--w-md': '40px', '--w-lg': '60px' },
+      },
     };
     const { findings } = scanRepo(root, profile, {});
     const finding = findings.find((f) => f.value === '10px');
-    assert.equal(finding.nearestToken, '--space-3');
+    assert.equal(finding.nearestToken, '--w-sm');
   });
 });
 
-test('scanRepo narrows a "min-width" property literal to the spacing token group', () => {
+test('scanRepo narrows a "min-width" property literal to the sizing token group', () => {
   withTempRoot((root) => {
     writeFileSync(join(root, 'Foo.css'), '.foo { min-width: 10px; }\n');
     const profile = {
       styling: { tokenSource: [] },
-      tokens: { radius: { '--radius': '10px' }, spacing: { '--space-3': '9px', '--space-8': '40px', '--space-12': '60px' } },
+      tokens: {
+        radius: { '--radius': '10px' },
+        spacing: { '--space-3': '9px', '--space-8': '40px', '--space-12': '60px' },
+        sizing: { '--w-sm': '11px', '--w-md': '40px', '--w-lg': '60px' },
+      },
     };
     const { findings } = scanRepo(root, profile, {});
     const finding = findings.find((f) => f.value === '10px');
-    assert.equal(finding.nearestToken, '--space-3');
+    assert.equal(finding.nearestToken, '--w-sm');
   });
 });
 
@@ -839,10 +850,14 @@ test('no-context suppressions tally once with a count across files', () => {
 // the spacing group holds 17px nearby. An unhinted literal therefore takes
 // the radius token on numeric distance alone, so "took --s2" is evidence the
 // hint steered the search rather than arithmetic.
+// Every group holds a step at 17px. A finding that names the wrong token is
+// therefore a finding that took the wrong group — the assertion is about
+// which scale the hint selected, never about which number is nearest.
 const HINT_FIXTURE_PROFILE = {
   styling: { tokenSource: [] },
   tokens: {
     spacing: { '--s1': '4px', '--s2': '17px', '--s3': '32px' },
+    sizing: { '--w1': '4px', '--w2': '17px', '--w3': '32px' },
     radius: { '--r1': '16px', '--r2': '20px', '--r3': '28px' },
     type: { '--t1': '17px', '--t2': '20px', '--t3': '24px' },
   },
@@ -867,8 +882,13 @@ test('camelCase property spellings carry the hint their kebab form does', () => 
     ].join('\n'));
     const { findings } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
     assert.equal(findings.length, 5);
+    // minWidth is a dimension and takes the sizing scale; the other four are
+    // gaps. Both groups hold a 17px step, so the token name is the only
+    // thing that says which one the spelling resolved to.
+    const expected = { 3: '--w2' };
     for (const finding of findings) {
-      assert.equal(finding.nearestToken, '--s2', `${finding.value} on line ${finding.line} took a radius token`);
+      const token = expected[finding.line] ?? '--s2';
+      assert.equal(finding.nearestToken, token, `${finding.value} on line ${finding.line} took the wrong group`);
     }
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -916,9 +936,16 @@ test('an arithmetic wrapper passes the property hint through to its operands', (
     assert.equal(findings.length, 6);
     for (const finding of findings) {
       // The subject is which GROUP the hint steered the search to, not which
-      // step of it won: 2rem is nearest --s3 and 16px is nearest --s2, and
-      // both are the right kind of answer. Only a radius token is wrong.
-      assert.match(finding.nearestToken ?? 'none', /^--s[123]$/, `line ${finding.line} (${finding.value}) did not take a spacing token`);
+      // step of it won: 2rem is nearest the third step and 16px the second,
+      // and both are the right kind of answer. Only a radius token is wrong.
+      // Lines 1 and 3 are `width` and `max-width` — dimensions, so they take
+      // the sizing scale; lines 2 and 4 are padding and margin.
+      const prefix = finding.line === 1 || finding.line === 3 ? 'w' : 's';
+      assert.match(
+        finding.nearestToken ?? 'none',
+        new RegExp(`^--${prefix}[123]$`),
+        `line ${finding.line} (${finding.value}) did not take a ${prefix === 'w' ? 'sizing' : 'spacing'} token`,
+      );
     }
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -991,7 +1018,7 @@ test('an arithmetic wrapper inside a Tailwind arbitrary value carries the hint',
     // accident, in the lexer.
     assert.equal(findings.length, 1);
     assert.equal(findings[0].value, '16px');
-    assert.equal(findings[0].nearestToken, '--s2', 'the bracket wrapper did not carry the spacing hint');
+    assert.equal(findings[0].nearestToken, '--w2', 'the bracket wrapper did not carry the sizing hint');
     assert.deepEqual(suppressed, [{ id: 'UX-102', reason: 'no-context', count: 1 }]);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -1002,16 +1029,16 @@ test("Tailwind's spaceless subtraction lexes its operand as a positive length", 
   // Tailwind's arbitrary values forbid whitespace, so `w-[calc(100%-16px)]`
   // is how a gutter is actually written — and the minus is an operator, not
   // a sign. Reading it as the negative length `-16px` made the wrapper rule
-  // inert for the only spelling this syntax permits: no positive spacing
-  // token can ever match a negative literal, so the hint arrived and had
-  // nothing to land on.
+  // inert for the only spelling this syntax permits: no positive token can
+  // ever match a negative literal, so the hint arrived and had nothing to
+  // land on.
   const root = mkdtempSync(join(tmpdir(), 'ux-engine-tw-neg-'));
   try {
     writeFileSync(join(root, 'a.tsx'), ['const a = <div className="w-[calc(100%-16px)]" />;', ''].join('\n'));
     const { findings } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
     assert.equal(findings.length, 1);
     assert.equal(findings[0].value, '16px');
-    assert.equal(findings[0].nearestToken, '--s2');
+    assert.equal(findings[0].nearestToken, '--w2');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1084,7 +1111,7 @@ test("spaceless addition lexes its operand without the operator's sign", () => {
     const { findings } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
     assert.equal(findings.length, 1);
     assert.equal(findings[0].value, '16px');
-    assert.equal(findings[0].nearestToken, '--s2');
+    assert.equal(findings[0].nearestToken, '--w2');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1169,6 +1196,43 @@ test('a no-context suppression carries no literals', () => {
     assert.equal(entry.count, 1);
     assert.equal(entry.values, undefined);
     assert.equal(entry.distinctLiterals, undefined);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// A width is not a gap. `max-w-[1184px]` is a page container, `mt-[24px]` is
+// a step on a spacing scale, and until now both carried the hint `spacing`
+// and competed for the same tokens. Measured across four repositories, 27%
+// to 63% of every spacing-hinted length was a width or a height — in
+// project-abhaya the suppressed "spacing" distribution was led by `1184px`
+// and `1440px`, two container widths, which is the evidence a reader would
+// have built a spacing scale out of.
+const SIZING_FIXTURE_PROFILE = {
+  styling: { tokenSource: [] },
+  tokens: {
+    spacing: { '--s1': '4px', '--s2': '24px', '--s3': '32px' },
+    sizing: { '--w1': '320px', '--w2': '640px', '--w3': '1184px' },
+    radius: {},
+    type: {},
+  },
+};
+
+test('a width literal is matched against the sizing scale, not the spacing scale', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-sizing-'));
+  try {
+    writeFileSync(join(root, 'a.tsx'), [
+      'const a = <div className="max-w-[1180px]" />;',
+      'const b = <div style={{ maxWidth: 1180 }} />;',
+      'const c = <div className="mt-[25px]" />;',
+      '',
+    ].join('\n'));
+    const { findings } = scanRepo(root, SIZING_FIXTURE_PROFILE, {});
+    const width = findings.find((f) => f.value === '1180px');
+    assert.ok(width, 'the width literal produced no finding at all');
+    assert.equal(width.nearestToken, '--w3', 'a container width was not offered the sizing scale');
+    const gap = findings.find((f) => f.value === '25px');
+    assert.equal(gap.nearestToken, '--s2', 'a margin stopped being spacing');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

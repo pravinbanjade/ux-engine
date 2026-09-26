@@ -111,6 +111,33 @@ tool measured.
   values fall on it and which do not, and let them choose. Adding tokens
   changes every future audit of the repo, so it is not yours to apply.
 
+## Sizing is not spacing
+
+`spacing` and `sizing` are separate groups and separate suppression lines.
+A gap, a padding and a margin are steps on a rhythm; a width and a height
+are dimensions. Do not merge the two distributions, and do not propose one
+scale covering both — a repository whose gutters are `0.25rem` apart and
+whose containers are `1184px` and `1440px` has two questions, not one.
+
+What a sizing distribution shows is only the fixed lengths. The scanner
+lexes `px`, `rem` and `em` and nothing else, so `100%`, `100vh` and `50%`
+— most of what a layout is actually built from — never appear in it. Do
+not read the list as the whole story of a repository's sizing, and do not
+report a distinct-value count as if it covered every width in the code.
+
+Read the values that are there for what they are: `1184px` and `1440px`
+are page containers, `768px` and `480px` are breakpoints, `400px` and
+`280px` are panel and sidebar widths. Those are what container and
+breakpoint tokens are made of, and they group by role rather than by
+sitting at even multiples of a base — a sizing scale is rarely the
+arithmetic progression a spacing scale is, so do not force one.
+
+When you do propose sizing tokens, name them so they land in the group:
+`--container-*`, `--breakpoint-*`, `--screen-*` and names containing
+`width`, `height` or `size` are read as sizing. A token named `--space-96`
+lands in spacing however wide it is, and the sizing suppression will still
+report no scale.
+
 ## Re-running on a repo that already has DESIGN.md
 
 Running step 5 again is safe — hand-written sections are preserved

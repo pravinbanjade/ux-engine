@@ -10,7 +10,7 @@ const PLACEHOLDER = [
 ].join('\n');
 
 const LABELS = {
-  color: 'Colour', spacing: 'Spacing', radius: 'Radius',
+  color: 'Colour', spacing: 'Spacing', sizing: 'Sizing', radius: 'Radius',
   type: 'Typography', shadow: 'Shadow', motion: 'Motion', other: 'Other',
 };
 

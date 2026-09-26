@@ -1,6 +1,6 @@
 import { parseColor } from './color.mjs';
 
-export const TOKEN_KINDS = ['color', 'spacing', 'radius', 'type', 'shadow', 'motion', 'other'];
+export const TOKEN_KINDS = ['color', 'spacing', 'sizing', 'radius', 'type', 'shadow', 'motion', 'other'];
 
 const BLOCK_START = /(?:@theme[^{]*|:root[^{]*)\{/g;
 
@@ -37,7 +37,26 @@ const NAME_RULES = [
   [/radius|rounded/, 'radius'],
   [/shadow|elevation/, 'shadow'],
   [/duration|ease|transition|animate|motion/, 'motion'],
-  [/text|font|leading|tracking|type/, 'type'],
+  // line-height and letter-spacing sit here, ahead of both rules that would
+  // otherwise claim them: `--letter-spacing` matched the spacing rule's
+  // "spacing" and `--line-height` would now match the sizing rule's
+  // "height". Both are typographic, and the scanner's hint table has always
+  // read them that way.
+  [/text|font|leading|tracking|type|line-?height|letter-?spacing/, 'type'],
+  // A dimension is not a gap, and the scanner no longer measures one
+  // against the other. This rule is what makes the advice it gives
+  // actionable: told that its sizing group holds no scale, a codebase adds
+  // `--container-md` and `--breakpoint-lg`, and those have to land in
+  // `sizing` or the group stays empty however many are written. It reads
+  // before the spacing rule because that rule owns the bare word `size`.
+  //
+  // The width alternative is guarded: a border, outline, ring or stroke
+  // width is a line thickness, not a box dimension, and grouping a 1px
+  // border with a 640px container would measure the first against the
+  // second. The scanner's hint table already refuses `border-width` for
+  // exactly this reason — its property boundary excludes a preceding
+  // hyphen — so the guard keeps the two tables saying the same thing.
+  [/container|breakpoint|screen|viewport|\bsize\b|(?<!border-|outline-|ring-|stroke-)width|height/, 'sizing'],
   [/spacing|space|gap|size|inset/, 'spacing'],
 ];
 
