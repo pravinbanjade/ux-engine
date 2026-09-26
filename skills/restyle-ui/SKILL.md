@@ -71,7 +71,19 @@ Each row names the token to use and why the script would not write it:
   family is how a plausible, wrong class name gets written. Hand this to the
   user with the token name.
 - `unsupported-context` — the literal is not in a CSS declaration, so
-  `var()` is not valid there (e.g. a bare constant, or a component prop).
+  `var()` is not valid there. Examples: a bare constant, a component prop,
+  a colour under a key that is not a colour property (`PRIMARY: '#1890ff'` in
+  a constants object passed to a chart), or console `%c` styling.
+- `outside-token-package` — the file sits in a different package from the
+  token source, such as an API's HTML email template or a CLI's colours.
+  `var()` would resolve to nothing there, because the stylesheet declaring the
+  token is never loaded. Do not substitute by hand either. Tell the user this
+  code has its own palette, and let them decide whether it needs one.
+- `non-dom-renderer` — the file imports a renderer that never loads a
+  stylesheet, such as a PDF renderer, React Native, a terminal UI or a 3D
+  scene. Its style objects look like CSS, but `var()` resolves to nothing
+  there. The fix is a JS constant exported beside the tokens, if the user
+  wants one, not a CSS variable.
 - `moved` — the file changed after the scan. Re-run step 3.
 - `no-token` — nothing in the token set is close enough. This is a signal to
   add a token, not to force a match.

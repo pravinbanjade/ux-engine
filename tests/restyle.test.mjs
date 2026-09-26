@@ -10,6 +10,7 @@ const at = (lineText, value, token) => substitutionFor({
   column: lineText.indexOf(value) + 1,
   value,
   token,
+  kind: value.startsWith('#') ? 'color' : 'length',
 });
 
 test('a stylesheet declaration is substituted', () => {
@@ -144,8 +145,8 @@ test('two identical literals on one line plan two distinct edits', () => {
   withRepo({ 'src/A.tsx': `${line}\n` }, (root) => {
     const envelope = {
       findings: [
-        scannerFinding({ id: 'UX-102', value: '17px', nearestToken: '--spacing-4', column: line.indexOf('17px') + 1 }),
-        scannerFinding({ id: 'UX-102', value: '17px', nearestToken: '--spacing-4', column: line.lastIndexOf('17px') + 1 }),
+        scannerFinding({ id: 'UX-102', kind: 'length', value: '17px', nearestToken: '--spacing-4', column: line.indexOf('17px') + 1 }),
+        scannerFinding({ id: 'UX-102', kind: 'length', value: '17px', nearestToken: '--spacing-4', column: line.lastIndexOf('17px') + 1 }),
       ],
     };
     const { edits } = planSubstitutions(envelope, { root });
@@ -275,4 +276,109 @@ test('renderPlan omits a section that has no rows', () => {
   assert.ok(!/## Substitutions/.test(out));
   assert.ok(!/## Needs a human/.test(out));
   assert.match(out, /## Needs judgment/);
+});
+
+// An API's email template held the same greys the frontend had tokens for,
+// in a template literal that reads exactly like a stylesheet. `var()` there
+// resolves to nothing — the token stylesheet is never loaded into an email.
+test('a literal in another package from the token source is left for a human', () => {
+  const css = '    body { background-color: #3b7d4f; }';
+  const ui = "const s = { color: '#3b7d4f' };";
+  withRepo({
+    'package.json': '{}',
+    'web/package.json': '{}',
+    'web/src/index.css': ':root { --color-primary: #3b7d4e; }\n',
+    'web/src/A.tsx': `${ui}\n`,
+    'api/package.json': '{}',
+    'api/prisma/seeds/email.seed.ts': `const html = \`\n${css}\n\`;\n`,
+  }, (root) => {
+    const envelope = { findings: [
+      scannerFinding({ file: 'web/src/A.tsx', column: ui.indexOf('#3b7d4f') + 1 }),
+      scannerFinding({ file: 'api/prisma/seeds/email.seed.ts', line: 2, column: css.indexOf('#3b7d4f') + 1 }),
+    ] };
+    const { edits, manual } = planSubstitutions(envelope, { root, tokenSource: ['web/src/index.css'] });
+    assert.deepEqual(edits.map((e) => e.file), ['web/src/A.tsx']);
+    assert.deepEqual(manual.map((m) => [m.file, m.reason]), [['api/prisma/seeds/email.seed.ts', 'outside-token-package']]);
+  });
+});
+
+test('a single-package repo substitutes anywhere in it', () => {
+  const line = "const s = { color: '#3b7d4f' };";
+  withRepo({
+    'package.json': '{}',
+    'src/styles/tokens.css': ':root { --color-primary: #3b7d4e; }\n',
+    'src/deep/nested/A.tsx': `${line}\n`,
+  }, (root) => {
+    const envelope = { findings: [scannerFinding({ file: 'src/deep/nested/A.tsx', column: line.indexOf('#3b7d4f') + 1 })] };
+    const { edits, manual } = planSubstitutions(envelope, { root, tokenSource: ['src/styles/tokens.css'] });
+    assert.equal(edits.length, 1);
+    assert.deepEqual(manual, []);
+  });
+});
+
+test('a repo with no package.json anywhere is one package', () => {
+  const line = "const s = { color: '#3b7d4f' };";
+  withRepo({
+    'styles/tokens.css': ':root { --color-primary: #3b7d4e; }\n',
+    'app/A.tsx': `${line}\n`,
+  }, (root) => {
+    const envelope = { findings: [scannerFinding({ file: 'app/A.tsx', column: line.indexOf('#3b7d4f') + 1 })] };
+    const { edits } = planSubstitutions(envelope, { root, tokenSource: ['styles/tokens.css'] });
+    assert.equal(edits.length, 1);
+  });
+});
+
+// A colour has no property hint, so the scanner reports one wherever it is
+// written. A JS constants object is declaration-shaped, and `var()` in a
+// string a chart library or canvas paints resolves to nothing.
+test('a colour under a key that is not a colour property is left for a human', () => {
+  assert.deepEqual(at("  PRIMARY: '#1890ff',", '#1890ff', '--color-primary'), { manual: true, reason: 'unsupported-context' });
+  assert.deepEqual(at("const theme = { brand: '#1890ff' };", '#1890ff', '--color-primary'), { manual: true, reason: 'unsupported-context' });
+});
+
+test('a colour under a colour property is substituted in either spelling', () => {
+  assert.deepEqual(at("  backgroundColor: '#3b7d4f',", '#3b7d4f', '--c'), { text: 'var(--c)' });
+  assert.deepEqual(at('  border-left-color: #3b7d4f;', '#3b7d4f', '--c'), { text: 'var(--c)' });
+  assert.deepEqual(at('  box-shadow: 0 1px 2px #3b7d4f;', '#3b7d4f', '--c'), { text: 'var(--c)' });
+  assert.deepEqual(at('<circle style={{ fill: "#3b7d4f" }} />', '#3b7d4f', '--c'), { text: 'var(--c)' });
+});
+
+test('console styling is left for a human', () => {
+  const line = "    console.group(`%c[ERROR] ${message}`, 'color: #ff4d4f; font-weight: bold;');";
+  assert.deepEqual(at(line, '#ff4d4f', '--c'), { manual: true, reason: 'unsupported-context' });
+});
+
+// A PDF renderer's StyleSheet uses real colour property names, and `var()`
+// in it prints nothing. The renderer is named in the file's imports.
+test('a file rendered outside the DOM is left for a human', () => {
+  const pdf = "  heading: { color: '#3b7d4f' },";
+  const native = "const s = StyleSheet.create({ box: { backgroundColor: '#3b7d4f' } });";
+  const dom = "const s = { color: '#3b7d4f' };";
+  withRepo({
+    'src/Report.tsx': `import { Document, StyleSheet } from '@react-pdf/renderer';\nconst styles = StyleSheet.create({\n${pdf}\n});\n`,
+    'src/Box.tsx': `import { StyleSheet } from 'react-native';\n${native}\n`,
+    'src/Web.tsx': `import React from 'react';\n${dom}\n`,
+  }, (root) => {
+    const envelope = { findings: [
+      scannerFinding({ file: 'src/Report.tsx', line: 3, column: pdf.indexOf('#3b7d4f') + 1 }),
+      scannerFinding({ file: 'src/Box.tsx', line: 2, column: native.indexOf('#3b7d4f') + 1 }),
+      scannerFinding({ file: 'src/Web.tsx', line: 2, column: dom.indexOf('#3b7d4f') + 1 }),
+    ] };
+    const { edits, manual } = planSubstitutions(envelope, { root });
+    assert.deepEqual(edits.map((e) => e.file), ['src/Web.tsx']);
+    assert.deepEqual(manual.map((m) => [m.file, m.reason]), [
+      ['src/Report.tsx', 'non-dom-renderer'],
+      ['src/Box.tsx', 'non-dom-renderer'],
+    ]);
+  });
+});
+
+test('a package whose name only starts like a renderer is not one', () => {
+  const dom = "const s = { color: '#3b7d4f' };";
+  withRepo({
+    'src/A.tsx': `import { inkBlot } from 'inkwell';\n${dom}\n`,
+  }, (root) => {
+    const envelope = { findings: [scannerFinding({ file: 'src/A.tsx', line: 2, column: dom.indexOf('#3b7d4f') + 1 })] };
+    assert.equal(planSubstitutions(envelope, { root }).edits.length, 1);
+  });
 });
