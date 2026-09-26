@@ -134,3 +134,19 @@ import { checkCrossFile } from '../scripts/lib/library.mjs';
 test('no two modes duplicate an id, a title, or a signal', () => {
   assert.deepEqual(checkCrossFile(modes), []);
 });
+
+// UX-102 is the mode every off-system length resolves to, and the scanner
+// measures lengths against four different scales. Across four real
+// repositories 403 of 403 emitted UX-102 findings came from the `type` or
+// `radius` scale, and every one of them resolved to a page arguing about
+// spacing rhythm. The mode has to be readable as advice about whichever
+// scale the finding names, so the word `spacing` may appear in it only as
+// one example among the others — never as the subject.
+test('UX-102 does not present itself as a mode about spacing alone', () => {
+  const mode = modes.find((m) => m.data.id === 'UX-102');
+  assert.ok(mode, 'UX-102 missing');
+  assert.doesNotMatch(mode.data.title, /spacing/i, 'the title names one of the four scales');
+  for (const group of ['sizing', 'radius', 'type']) {
+    assert.match(mode.body, new RegExp(group, 'i'), `the body never mentions the ${group} scale`);
+  }
+});

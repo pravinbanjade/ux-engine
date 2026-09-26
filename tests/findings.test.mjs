@@ -454,3 +454,43 @@ test('a suppression written before literals were kept still renders', () => {
   assert.ok(!/Most used/.test(report));
   assert.ok(!/undefined/.test(report));
 });
+
+// A scanner row renders its own message; the mode's title never reaches the
+// report. So "which scale was this measured against" has exactly one place
+// it can be said, and until the finding carried a group it was said nowhere
+// — a 13px font size and a 13px gutter produced rows that read identically
+// and resolved to a mode about spacing rhythm.
+test('a length finding names the scale it was measured against', () => {
+  const [first] = normalizeScannerFindings({
+    findings: [{ id: 'UX-102', file: 'a.tsx', line: 1, value: '13px', kind: 'length', group: 'type', nearestToken: '--text-sm', distance: 0.06 }],
+    skipped: [],
+  }, modes);
+  assert.equal(first.message, 'Off-system length `13px` measured against the type scale — nearest token `--text-sm` (distance 0.06).');
+  assert.equal(first.group, 'type');
+});
+
+test('a length finding with no near token still names the scale', () => {
+  const [first] = normalizeScannerFindings({
+    findings: [{ id: 'UX-102', file: 'a.tsx', line: 1, value: '13px', kind: 'length', group: 'sizing', nearestToken: null, distance: null }],
+    skipped: [],
+  }, modes);
+  assert.equal(first.message, 'Off-system length `13px` measured against the sizing scale — no near token; likely a genuinely new value.');
+});
+
+test('a colour or duration finding does not name its scale', () => {
+  // Both have exactly one group and always did. "Measured against the colour
+  // scale" on a colour finding is a clause that removes no ambiguity, and
+  // every row would carry it.
+  const out = normalizeScannerFindings({
+    findings: [
+      { id: 'UX-101', file: 'a.tsx', line: 1, value: '#3b7d4f', kind: 'color', group: 'color', nearestToken: '--primary', distance: 0.03 },
+      { id: 'UX-103', file: 'a.tsx', line: 2, value: '220ms', kind: 'time', group: 'motion', nearestToken: null, distance: null },
+    ],
+    skipped: [],
+  }, modes);
+  assert.equal(out[0].message, 'Off-system colour `#3b7d4f` — nearest token `--primary` (distance 0.03).');
+  assert.equal(out[1].message, 'Off-system duration `220ms` — no near token; likely a genuinely new value.');
+  // The field is still carried: a consumer reading `group` should not have
+  // to special-case the two kinds whose group never appears in the message.
+  assert.deepEqual(out.map((f) => f.group), ['color', 'motion']);
+});

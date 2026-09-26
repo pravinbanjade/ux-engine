@@ -4,12 +4,24 @@ export const ENVELOPE_VERSION = 1;
 // the way a person would.
 const NOUN = { color: 'colour', length: 'length', time: 'duration' };
 
+// A length is the only kind whose group is in doubt. The scanner picks it
+// from the surrounding code — a padding takes `spacing`, a width `sizing`, a
+// font size `type` — and the report is the only place that choice can be
+// stated, because a scanner row renders this message and never the mode's
+// title. Colours and durations have one group each and always did, so the
+// clause would repeat itself on every row without removing any ambiguity.
+// A row with no group at all is an envelope written before this existed; it
+// renders exactly as it used to rather than saying "the undefined scale".
+function scale(row) {
+  return row.kind === 'length' && row.group ? ` measured against the ${row.group} scale` : '';
+}
+
 function scannerMessage(row) {
   const noun = NOUN[row.kind] ?? 'value';
   if (!row.nearestToken) {
-    return `Off-system ${noun} \`${row.value}\` — no near token; likely a genuinely new value.`;
+    return `Off-system ${noun} \`${row.value}\`${scale(row)} — no near token; likely a genuinely new value.`;
   }
-  return `Off-system ${noun} \`${row.value}\` — nearest token \`${row.nearestToken}\` (distance ${row.distance.toFixed(2)}).`;
+  return `Off-system ${noun} \`${row.value}\`${scale(row)} — nearest token \`${row.nearestToken}\` (distance ${row.distance.toFixed(2)}).`;
 }
 
 export function normalizeScannerFindings(scanOutput, modes) {
@@ -26,6 +38,7 @@ export function normalizeScannerFindings(scanOutput, modes) {
       column: row.column,
       value: row.value,
       kind: row.kind,
+      group: row.group ?? null,
       nearestToken: row.nearestToken,
       distance: row.distance,
       message: scannerMessage(row),
