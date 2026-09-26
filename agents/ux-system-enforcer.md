@@ -14,9 +14,12 @@ root.
 
 1. **Scan.** Run
    `node ${CLAUDE_PLUGIN_ROOT}/scripts/scan-off-system.mjs --profile <profile>
-   --root <root>` with the scope flags you were given, and save stdout to a
-   temp file. Report its path back to the caller; do not re-derive its
-   findings by hand.
+   --root <root>` and save stdout to a temp file. The scanner takes no diff
+   flags. It scans the whole repository, and the caller's `report-findings.mjs
+   --scope diff --base <ref>` narrows the result to the lines the diff
+   touched. Report the file's path back to the caller. Do not filter or
+   re-derive its findings by hand: that is the report script's job, and a
+   hand-filtered scan disagrees with it.
 
 2. **Name the surfaces.** List the files the diff touched and say what each
    one is, in the catalog's own vocabulary: `table`, `form`, `list`,

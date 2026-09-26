@@ -41,6 +41,7 @@ The scripts need Node.js 20 or later on your `PATH`.
 | `.ux-engine/profile.json` | Machine-readable design system: tokens, components, conventions, and the hashes it was derived from. |
 | `DESIGN.md` | The same thing for humans, plus a **Deliberate Exceptions** section you edit by hand. |
 | `.ux-engine/findings.json` | The most recent audit or review, in the findings envelope format. |
+| `.ux-engine/report.md` | The same audit or review as a readable report. A long one is summarised in the conversation, and this file holds it in full. |
 | `.ux-engine/wireframes/<slug>.json` | One per screen `/ux-design` has built: the intent you answered, the structure you approved, and every correction you made. |
 
 ## What it runs

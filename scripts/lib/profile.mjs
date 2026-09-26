@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { extractCustomProperties, groupTokens, themedTokenNames, TOKEN_KINDS } from './tokens.mjs';
-import { readManifest, detectStyling, detectComponents, detectConventions } from './detect.mjs';
+import { readManifest, detectStyling, detectComponents, detectConventions, owningPackage } from './detect.mjs';
 
 export const SCHEMA_VERSION = 1;
 
@@ -111,11 +111,22 @@ export function setPath(obj, path, value) {
 // re-detection instead of being silently overwritten. With no overrides,
 // this produces exactly what it always has.
 export function buildProfile(root, { now = new Date().toISOString(), overrides = {} } = {}) {
-  const manifest = readManifest(root);
-  const deps = manifest?.deps ?? {};
+  // Where the UI lives decides whose dependencies describe it. The component
+  // directory and the token files are found without reading any manifest, so
+  // find them first, then read the package that owns them. Reading only the
+  // root manifest made every monorepo look dependency-free: a Tailwind v4
+  // frontend under `web/` was recorded as plain CSS with no framework, router,
+  // test runner, primitives or variant mechanism, and a root that is itself a
+  // server contributed its own dependencies instead.
+  const rootDeps = readManifest(root)?.deps ?? {};
+  const probeStyling = detectStyling(root, rootDeps);
+  const probeComponents = detectComponents(root, rootDeps);
+  const anchor = probeComponents.dir ? `${probeComponents.dir}/x` : probeStyling.tokenSource[0];
+  const packageDir = anchor ? owningPackage(root, anchor) : '';
+  const deps = packageDir ? { ...rootDeps, ...(readManifest(join(root, packageDir))?.deps ?? {}) } : rootDeps;
 
   const styling = detectStyling(root, deps);
-  const components = detectComponents(root, deps);
+  const components = detectComponents(root, deps, packageDir);
   const conventions = detectConventions(deps);
 
   // Defence in depth: callers (see detect-profile.mjs) are expected to have
@@ -201,7 +212,8 @@ export function buildProfile(root, { now = new Date().toISOString(), overrides =
   // resolvedByHuman named it.
   if ('styling.tokenSource' in safeOverrides) safeOverrides['styling.tokenSource'] = tokenSource;
 
-  const sourcePaths = ['package.json', 'components.json', ...tokenSource].filter((p) => existsSync(join(root, p)));
+  const uiManifests = packageDir ? [`${packageDir}/package.json`, `${packageDir}/components.json`] : [];
+  const sourcePaths = ['package.json', 'components.json', ...uiManifests, ...tokenSource].filter((p) => existsSync(join(root, p)));
   const derivedFrom = [...new Set(sourcePaths)].sort().map((path) => ({
     path,
     sha256: sha256(readFileSync(join(root, path))),

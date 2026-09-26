@@ -19,7 +19,7 @@ const flag = (name, fallback) => {
 };
 const has = (name) => args.includes(`--${name}`);
 
-const USAGE = 'Usage: report-findings.mjs --scanner <json> [--model <json>] --profile <path> [--design <path>] [--root <dir>] [--scope path|diff] [--path <dir>] [--base <ref>] [--fail-on high|medium|low] [--out <path>] [--json]';
+const USAGE = 'Usage: report-findings.mjs --scanner <json> [--model <json>] --profile <path> [--design <path>] [--root <dir>] [--scope path|diff] [--path <dir>] [--base <ref>] [--fail-on high|medium|low] [--out <path>] [--report <path>] [--json]';
 
 const fail = (message) => {
   console.error(message);
@@ -41,6 +41,11 @@ if (failOn && !['high', 'medium', 'low'].includes(failOn)) fail(`${USAGE}\n--fai
 const root = resolve(flag('root', '.'));
 const designPath = resolve(flag('design', join(root, 'DESIGN.md')));
 const outPath = resolve(flag('out', join(root, '.ux-engine/findings.json')));
+// The rendered report, kept beside the envelope. A report of sixty findings
+// is too long to paste into a conversation, and the model presenting it will
+// condense it whether or not it is told to — so the full text always exists
+// on disk, and what is shown can be an excerpt of it that points here.
+const reportPath = resolve(flag('report', join(dirname(outPath), 'report.md')));
 
 // A profile that cannot be trusted must never produce a report: same
 // vocabulary and same exit code as every other command in the plugin.
@@ -139,12 +144,13 @@ const envelope = buildEnvelope({
   exceptionsApplied,
 });
 
+const rendered = `${renderReport(envelope, modes)}\n`;
 mkdirSync(dirname(outPath), { recursive: true });
 writeFileSync(outPath, `${JSON.stringify(envelope, null, 2)}\n`);
+mkdirSync(dirname(reportPath), { recursive: true });
+writeFileSync(reportPath, rendered);
 
-process.stdout.write(has('json')
-  ? `${JSON.stringify(envelope, null, 2)}\n`
-  : `${renderReport(envelope, modes)}\n`);
+process.stdout.write(has('json') ? `${JSON.stringify(envelope, null, 2)}\n` : rendered);
 
 if (failOn) {
   const rank = { high: 0, medium: 1, low: 2 };

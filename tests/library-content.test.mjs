@@ -158,3 +158,15 @@ test('every length scale the scanner measures has a mode titled for it', () => {
     assert.match(mode.data.title, TITLE_WORD[group], `${id}'s title does not name the ${group} scale`);
   }
 });
+
+test('the audit presents a long report as a verbatim excerpt that points at report.md', () => {
+  const skill = readFileSync(fileURLToPath(new URL('../skills/audit-ui/SKILL.md', import.meta.url)), 'utf8');
+  assert.match(skill, /\.ux-engine\/report\.md/);
+  assert.match(skill, /never paraphrases/);
+});
+
+test('/ux-design asks before changing code outside the UI package', () => {
+  const skill = readFileSync(fileURLToPath(new URL('../skills/design-ui/SKILL.md', import.meta.url)), 'utf8');
+  assert.match(skill, /Stay inside the package that holds the UI/);
+  assert.match(skill, /stop before writing it and ask/);
+});
