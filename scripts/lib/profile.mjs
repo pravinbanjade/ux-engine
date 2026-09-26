@@ -127,6 +127,10 @@ export function buildProfile(root, { now = new Date().toISOString(), overrides =
 
   const styling = detectStyling(root, deps);
   const components = detectComponents(root, deps, packageDir);
+  // '' when the UI is the repository itself. The scanner stays inside this
+  // package by default: a server's email templates and a CLI's colours are
+  // not the UI, and reporting them as UX findings buries the ones that are.
+  components.package = packageDir;
   const conventions = detectConventions(deps);
 
   // Defence in depth: callers (see detect-profile.mjs) are expected to have

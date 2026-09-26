@@ -10,7 +10,7 @@ import { findLiterals, findLiteralsAt, nearestToken, scanRepo, DEFAULT_THRESHOLD
 
 const fixture = (n) => fileURLToPath(new URL(`../tests/fixtures/${n}/`, import.meta.url));
 const cli = fileURLToPath(new URL('../scripts/scan-off-system.mjs', import.meta.url));
-const USAGE = 'Usage: scan-off-system.mjs --profile <path> [--root <dir>] [--path <dir>] [--threshold-color N] [--threshold-scalar N]';
+const USAGE = 'Usage: scan-off-system.mjs --profile <path> [--root <dir>] [--path <dir>] [--all-packages] [--threshold-color N] [--threshold-scalar N]';
 
 test('findLiterals reports value, kind and 1-indexed line', () => {
   const found = findLiterals("a\nconst c = '#3b7d4f';\nconst p = '17px';\nconst d = '220ms';\n");
@@ -1438,4 +1438,52 @@ test('a token reference\'s fallback is not a literal', () => {
 
 test('a literal after a token reference on the same line is still found', () => {
   assert.deepEqual(findLiterals('  border: var(--w, 1px) solid #123456;\n'), [{ line: 1, value: '#123456', kind: 'color' }]);
+});
+
+// Across four real monorepos the code outside the UI package was API seed
+// data, server logging and test names, reported as UI findings.
+test('a monorepo is scanned inside its UI package unless told otherwise', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-uipkg-'));
+  try {
+    mkdirSync(join(root, 'web/src'), { recursive: true });
+    mkdirSync(join(root, 'api/seeds'), { recursive: true });
+    writeFileSync(join(root, 'web/src/A.tsx'), "const a = { color: '#123456' };\n");
+    writeFileSync(join(root, 'api/seeds/email.ts'), "const html = '<p style=\"color: #654321\">';\n");
+    const profile = {
+      styling: { tokenSource: [] },
+      components: { package: 'web' },
+      tokens: { color: { '--c1': '#123457', '--c2': '#ffffff', '--c3': '#000000' } },
+    };
+
+    const scoped = scanRepo(root, profile, {});
+    assert.deepEqual(scoped.findings.map((f) => f.file), ['web/src/A.tsx']);
+    assert.equal(scoped.scannedPackage, 'web');
+
+    const all = scanRepo(root, profile, { allPackages: true });
+    assert.deepEqual(all.findings.map((f) => f.file).sort(), ['api/seeds/email.ts', 'web/src/A.tsx']);
+    assert.equal('scannedPackage' in all, false);
+
+    const explicit = scanRepo(root, profile, { path: 'api' });
+    assert.deepEqual(explicit.findings.map((f) => f.file), ['api/seeds/email.ts'], 'an explicit path always wins');
+    assert.equal('scannedPackage' in explicit, false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a profile with no recorded package, or a root-level UI, is scanned whole', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-uipkg-none-'));
+  try {
+    mkdirSync(join(root, 'a'), { recursive: true });
+    mkdirSync(join(root, 'b'), { recursive: true });
+    writeFileSync(join(root, 'a/A.tsx'), "const a = { color: '#123456' };\n");
+    writeFileSync(join(root, 'b/B.tsx'), "const b = { color: '#123456' };\n");
+    const tokens = { color: { '--c1': '#123457', '--c2': '#ffffff', '--c3': '#000000' } };
+    for (const components of [undefined, { package: '' }]) {
+      const { findings } = scanRepo(root, { styling: { tokenSource: [] }, components, tokens }, {});
+      assert.equal(findings.length, 2);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseColor, deltaE, parseScalar, scalarDistance } from '../scripts/lib/color.mjs';
+import { parseColor, deltaE, parseScalar, scalarDistance, parseTokenColor, isChannelColor, tokenColorFor } from '../scripts/lib/color.mjs';
 
 test('parseColor reads hex', () => {
   const c = parseColor('#ffffff');
@@ -195,4 +195,28 @@ test('deltaE refuses to compare colours of different opacity', () => {
   assert.equal(deltaE(translucent, opaque), Infinity);
   assert.equal(deltaE(opaque, opaque), 0);
   assert.equal(deltaE(translucent, parseColor('rgba(255, 255, 255, 0.08)')), 0);
+});
+
+test('a bare HSL channel token value parses as a colour', () => {
+  assert.ok(deltaE(parseTokenColor('0 0% 100%'), parseColor('#ffffff')) < 0.001);
+  assert.ok(deltaE(parseTokenColor('222.2 84% 4.9%'), parseColor('hsl(222.2 84% 4.9%)')) < 0.001);
+  assert.equal(parseTokenColor('0 0% 100% / 0.5').alpha, 0.5);
+  assert.ok(isChannelColor('210deg 40% 96.1%'));
+});
+
+test('three bare numbers without percentages are not channels', () => {
+  for (const v of ['0 1px 2px', '255 255 255', '1 2 3', '10px', 'solid']) {
+    assert.equal(isChannelColor(v), false, v);
+    assert.equal(parseTokenColor(v), null, v);
+  }
+});
+
+test('parseColor itself still refuses bare channels, so source code is never read that way', () => {
+  assert.equal(parseColor('0 0% 100%'), null);
+});
+
+test('a channel token takes a translucent literal\'s opacity; a full colour keeps its own', () => {
+  const literal = parseColor('rgb(255 255 255 / 0.4)');
+  assert.equal(tokenColorFor(literal, '0 0% 100%').alpha, 0.4);
+  assert.equal(tokenColorFor(literal, '#ffffff').alpha, 1);
 });

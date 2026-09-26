@@ -1,4 +1,4 @@
-import { parseColor } from './color.mjs';
+import { parseTokenColor } from './color.mjs';
 
 export const TOKEN_KINDS = ['color', 'spacing', 'sizing', 'radius', 'type', 'shadow', 'motion', 'other'];
 
@@ -118,7 +118,7 @@ export function categorizeToken(name, value) {
   // so letting a real colour value settle the question first never takes a
   // correct classification away from the name rules, it only fixes the
   // cases they got wrong.
-  if (parseColor(value) !== null) return 'color';
+  if (parseTokenColor(value) !== null) return 'color';
   const v = String(value).trim();
   const named = nameKind(name);
   if (named) return named;

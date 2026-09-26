@@ -19,7 +19,8 @@
     "dir": "src/components",
     "library": null,
     "variantMechanism": "styled",
-    "primitives": null
+    "primitives": null,
+    "package": ""
   },
   "tokens": {
     "color": {},

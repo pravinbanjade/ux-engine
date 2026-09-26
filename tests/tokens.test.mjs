@@ -203,3 +203,9 @@ test('a token declared with different values in different blocks is themed', () 
 test('themed tokens are found across token files', () => {
   assert.deepEqual(themedTokenNames([':root { --a: 1px; }', '[data-theme="x"] { --a: 2px; }']), ['--a']);
 });
+
+test('a bare-channel token is a colour even when its name says nothing', () => {
+  assert.equal(categorizeToken('--primary', '222.2 47.4% 11.2%'), 'color');
+  assert.equal(categorizeToken('--ring', '215 20.2% 65.1%'), 'color');
+  assert.equal(categorizeToken('--shadow-sm', '0 1px 2px'), 'shadow');
+});

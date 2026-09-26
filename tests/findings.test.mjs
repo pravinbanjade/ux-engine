@@ -519,3 +519,9 @@ test('a sizing suppression names the tokens that may be its scale under another 
   }), modes);
   assert.match(report, /Filed under spacing by value alone, not by name: `--shell`, `--wrap-max`/);
 });
+
+test('a report scanned inside the UI package says so in its summary', () => {
+  const report = renderReport(envelopeWith([], { scannedPackage: 'web' }), modes);
+  assert.match(report, /scanner limited to UI package `web`/);
+  assert.doesNotMatch(renderReport(envelopeWith([]), modes), /UI package/);
+});

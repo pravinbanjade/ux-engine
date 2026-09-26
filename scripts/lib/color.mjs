@@ -112,6 +112,40 @@ export function parseColor(input) {
   return null;
 }
 
+// A colour token written as bare HSL channels — `--background: 0 0% 100%` —
+// and used as `hsl(var(--background))` or `hsl(var(--background) / 0.5)`.
+// It is the older shadcn convention, and repositories that follow it keep
+// every base token this way, so a parser that only reads full colour syntax
+// sees none of them: across one real repository the only parseable white was
+// a status token, and it won every match against a white literal. Read only
+// as a token value, never in source code, where three numbers and two
+// percentages mean something else as often as not.
+const HSL_CHANNELS = /^(-?\d*\.?\d+)(?:deg)?\s+(\d*\.?\d+)%\s+(\d*\.?\d+)%(?:\s*\/\s*(\d*\.?\d+%?))?$/;
+
+export function isChannelColor(value) {
+  return HSL_CHANNELS.test(String(value).trim());
+}
+
+export function parseTokenColor(value) {
+  const direct = parseColor(value);
+  if (direct) return direct;
+  const m = HSL_CHANNELS.exec(String(value).trim());
+  if (!m) return null;
+  return parseColor(`hsl(${m[1]} ${m[2]}% ${m[3]}%${m[4] ? ` / ${m[4]}` : ''})`);
+}
+
+// The colour a token contributes when it stands in for `literal`. A channel
+// token carries no alpha of its own — the call site supplies it, as
+// `hsl(var(--x) / 0.5)` — so a translucent literal is compared against the
+// token's colour at the literal's opacity. A full colour value keeps its own
+// alpha, and a different opacity is a different colour (see deltaE).
+export function tokenColorFor(literal, tokenValue) {
+  const parsed = parseTokenColor(tokenValue);
+  if (!parsed || !literal) return parsed;
+  if (isChannelColor(tokenValue) && parsed.alpha === 1) return { ...parsed, alpha: literal.alpha ?? 1 };
+  return parsed;
+}
+
 export function deltaE(c1, c2) {
   if (!c1 || !c2) return Infinity;
   // Two colours that differ in opacity are different colours, not near

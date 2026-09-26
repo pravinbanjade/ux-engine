@@ -53,9 +53,12 @@ export function buildEnvelope({
   profileHash,
   scope,
   exceptionsApplied = 0,
+  scannedPackage = null,
   generatedAt = new Date().toISOString(),
 }) {
-  return { version: ENVELOPE_VERSION, generatedAt, profileHash, scope, findings, skipped, suppressed, exceptionsApplied };
+  const envelope = { version: ENVELOPE_VERSION, generatedAt, profileHash, scope, findings, skipped, suppressed, exceptionsApplied };
+  if (scannedPackage) envelope.scannedPackage = scannedPackage;
+  return envelope;
 }
 // Model findings arrive as JSON the skill wrote. Everything here exists so
 // that a hallucinated mode id, a guessed severity or a missing line never
@@ -161,7 +164,8 @@ export function renderReport(envelope, modes) {
   for (const finding of envelope.findings) counts[finding.severity] += 1;
 
   const summary = [
-    `scope: ${envelope.scope.kind} \`${envelope.scope.value}\``,
+    `scope: ${envelope.scope.kind} \`${envelope.scope.value}\``
+      + (envelope.scannedPackage ? ` (scanner limited to UI package \`${envelope.scannedPackage}\`)` : ''),
     `${counts.high} high · ${counts.medium} medium · ${counts.low} low`,
   ];
   if (envelope.exceptionsApplied) summary.push(`${envelope.exceptionsApplied} exceptions applied`);

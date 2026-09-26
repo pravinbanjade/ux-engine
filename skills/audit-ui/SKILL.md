@@ -30,6 +30,11 @@ cannot do: deciding whether a component actually exhibits a failure mode.
    <repo-root>/.ux-engine/profile.json --root <repo-root>` (add `--path <dir>`
    when auditing one directory) and save stdout to a temp file.
 
+   In a monorepo, a scan with no `--path` covers only the package that holds
+   the UI (`profile.components.package`). The report says so in its summary.
+   Add `--all-packages` only when the user asks to audit the whole
+   repository, server code included.
+
 3. **Name the surfaces.**
    List the files in scope and say what each one is, in the catalog's own
    vocabulary: `table`, `form`, `list`, `detail-view`, `modal`, `chart`,
