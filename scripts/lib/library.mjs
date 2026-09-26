@@ -15,17 +15,36 @@ export const DETECTIONS = ['model', 'scanner', 'hybrid', 'conformance'];
 // the convention to a checked rule means a mode's number and its category can
 // never drift apart, and makes "the catalog is complete" a real assertion
 // rather than a count that happens to match.
+//
+// A category may own more than one range. IDs are published — they travel in
+// findings envelopes, `.ux-engine/exceptions` files and approved design docs —
+// so a category that outgrows its block takes a new block at the end of the
+// catalog rather than renumbering the one after it. `system-consistency`
+// filled 101-110 before the scanner's length scales each got a mode, and the
+// conformance modes at 111-120 were already in people's files.
 export const CATEGORY_RANGES = {
-  'information-architecture': [1, 13],
-  'interaction': [14, 30],
-  'visual-hierarchy': [31, 45],
-  'state-coverage': [46, 60],
-  'forms': [61, 75],
-  'data-display': [76, 90],
-  'accessibility': [91, 100],
-  'system-consistency': [101, 110],
-  'conformance': [111, 120],
+  'information-architecture': [[1, 13]],
+  'interaction': [[14, 30]],
+  'visual-hierarchy': [[31, 45]],
+  'state-coverage': [[46, 60]],
+  'forms': [[61, 75]],
+  'data-display': [[76, 90]],
+  'accessibility': [[91, 100]],
+  'system-consistency': [[101, 110], [121, 123]],
+  'conformance': [[111, 120]],
 };
+
+export const CATALOG_SIZE = Object.values(CATEGORY_RANGES)
+  .flat()
+  .reduce((n, [lo, hi]) => n + hi - lo + 1, 0);
+
+export function inCategoryRange(category, n) {
+  return (CATEGORY_RANGES[category] ?? []).some(([lo, hi]) => n >= lo && n <= hi);
+}
+
+export function describeRanges(category) {
+  return (CATEGORY_RANGES[category] ?? []).map(([lo, hi]) => `${lo}-${hi}`).join(', ');
+}
 
 // Closed, because select-modes.mjs filters on these values. A freeform
 // vocabulary makes the selector guessable-at rather than callable: a caller
@@ -194,9 +213,8 @@ export function validateModeFile({ filename, text }) {
   // valid, so a malformed ID reports one clear error instead of two.
   if (/^UX-\d{3}$/.test(data.id ?? '') && CATEGORY_RANGES[data.category]) {
     const n = Number(data.id.slice(3));
-    const [lo, hi] = CATEGORY_RANGES[data.category];
-    if (n < lo || n > hi) {
-      errors.push(`${filename}: id ${data.id} is outside the ${data.category} range ${lo}-${hi}`);
+    if (!inCategoryRange(data.category, n)) {
+      errors.push(`${filename}: id ${data.id} is outside the ${data.category} range ${describeRanges(data.category)}`);
     }
   }
 

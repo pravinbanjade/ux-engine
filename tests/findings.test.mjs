@@ -494,3 +494,28 @@ test('a colour or duration finding does not name its scale', () => {
   // to special-case the two kinds whose group never appears in the message.
   assert.deepEqual(out.map((f) => f.group), ['color', 'motion']);
 });
+
+test('a duration no-context suppression says what those values usually are', () => {
+  const report = renderReport(envelopeWith([], {
+    suppressed: [{ id: 'UX-103', reason: 'no-context', kind: 'time', count: 7 }],
+  }), modes);
+  assert.match(report, /UX-103 suppressed for 7 duration-shaped value\(s\) outside any transition or animation/);
+  assert.doesNotMatch(report, /length\(s\)/);
+});
+
+test('a no-context entry with no kind still renders as lengths', () => {
+  const report = renderReport(envelopeWith([], {
+    suppressed: [{ id: 'UX-102', reason: 'no-context', count: 3 }],
+  }), modes);
+  assert.match(report, /UX-102 suppressed for 3 length\(s\)/);
+});
+
+test('a sizing suppression names the tokens that may be its scale under another name', () => {
+  const report = renderReport(envelopeWith([], {
+    suppressed: [{
+      id: 'UX-121', reason: 'unusable-scale', groups: ['sizing'], distinctValues: 0, count: 4,
+      values: [{ value: '1184px', count: 4 }], distinctLiterals: 1, unclaimedTokens: ['--shell', '--wrap-max'],
+    }],
+  }), modes);
+  assert.match(report, /Filed under spacing by value alone, not by name: `--shell`, `--wrap-max`/);
+});

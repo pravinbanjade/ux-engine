@@ -203,7 +203,14 @@ export function renderReport(envelope, modes) {
         // the scanner does not record which contexts produced it. Listing
         // likely ones tells a reader whose own literal was suppressed for a
         // different reason that the line is not about them.
-        out.push(`- ${s.id} suppressed for ${s.count} length(s) whose surrounding code does not say which token group they belong to — no scale was applied, so no substitution was offered`);
+        //
+        // An entry written before durations could be unmeasured has no
+        // `kind`, and it is always a length — that was the only kind then.
+        if (s.kind === 'time') {
+          out.push(`- ${s.id} suppressed for ${s.count} duration-shaped value(s) outside any transition or animation — most are timeouts, status codes or prose, so none was measured against the motion scale`);
+        } else {
+          out.push(`- ${s.id} suppressed for ${s.count} length(s) whose surrounding code does not say which token group they belong to — no scale was applied, so no substitution was offered`);
+        }
       } else {
         const group = s.groups.join('|');
         out.push(`- ${s.id} suppressed for ${group} — ${s.distinctValues} distinct values, not a scale (${s.count} literals)`);
@@ -217,6 +224,14 @@ export function renderReport(envelope, modes) {
           const hidden = (s.distinctLiterals ?? s.values.length) - s.values.length;
           out.push(`  - Most used: ${shown}${hidden > 0 ? ` — ${hidden} more not shown` : ''}`);
           out.push(`  - These are the raw material for a ${group} scale; the remedy is tokens, not a quieter report.`);
+        }
+        // A sizing group can read as empty because its tokens are named in a
+        // way the classifier does not recognise as dimensions. These are the
+        // spacing tokens filed there on their value alone — the only
+        // candidates — and renaming one is what moves it.
+        if (s.unclaimedTokens?.length) {
+          const names = s.unclaimedTokens.map((n) => `\`${n}\``).join(', ');
+          out.push(`  - Filed under spacing by value alone, not by name: ${names} — if any is a container, breakpoint or fixed dimension, name it with container, breakpoint, width, height, size or layout so it lands in sizing.`);
         }
       }
     }

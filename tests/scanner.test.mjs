@@ -705,7 +705,7 @@ test('an unusable-scale suppression carries its reason', () => {
 });
 
 test('a duration against an empty motion group suppresses as unusable-scale', () => {
-  // KIND_TO_GROUPS.time is ['motion']. A profile with no motion tokens yields
+  // A transition hints `motion`. A profile with no motion tokens yields
   // an empty candidate set — today's behaviour, and the refactor must keep it.
   const root = mkdtempSync(join(tmpdir(), 'ux-engine-motion-'));
   try {
@@ -804,13 +804,14 @@ test('one hinted and one unhinted length in a file yield a finding and a suppres
   }
 });
 
-test('colours and durations still match their group with no hint', () => {
+test('colours match their group with no hint, and durations with a motion one', () => {
   // The obvious wrong implementation fails closed on a null hint for every
-  // kind, which silently disables UX-101 and UX-103 altogether.
+  // kind, which silently disables UX-101 altogether. Durations do fail
+  // closed now, so theirs is written where a duration is actually used.
   const root = mkdtempSync(join(tmpdir(), 'ux-engine-kinds-'));
   try {
     mkdirSync(join(root, 'src'), { recursive: true });
-    writeFileSync(join(root, 'src/K.tsx'), "const c = '#3b7d4f';\nconst t = '220ms';\n");
+    writeFileSync(join(root, 'src/K.tsx'), "const c = '#3b7d4f';\nconst t = { transition: '220ms' };\n");
     const profile = {
       styling: { tokenSource: [] },
       tokens: {
@@ -1019,7 +1020,7 @@ test('an arithmetic wrapper inside a Tailwind arbitrary value carries the hint',
     assert.equal(findings.length, 1);
     assert.equal(findings[0].value, '16px');
     assert.equal(findings[0].nearestToken, '--w2', 'the bracket wrapper did not carry the sizing hint');
-    assert.deepEqual(suppressed, [{ id: 'UX-102', reason: 'no-context', count: 1 }]);
+    assert.deepEqual(suppressed, [{ id: 'UX-102', reason: 'no-context', kind: 'length', count: 1 }]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1283,6 +1284,140 @@ test('a colour and a duration finding record their own single group', () => {
       },
     }, {});
     assert.deepEqual(findings.map((f) => f.group), ['color', 'motion']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Each length scale reports under its own mode. A container width filed as
+// UX-102 read as "a spacing value", and a mode broad enough to cover widths,
+// corners and type at once could say nothing specific about any of them.
+test('a length finding takes the mode of the scale it was measured against', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-group-id-'));
+  try {
+    writeFileSync(join(root, 'a.css'), [
+      '.a { padding: 18px; }',
+      '.b { max-width: 18px; }',
+      '.c { border-radius: 21px; }',
+      '.d { font-size: 21px; }',
+      '',
+    ].join('\n'));
+    const { findings } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
+    assert.deepEqual(
+      findings.map((f) => [f.group, f.id]),
+      [['spacing', 'UX-102'], ['sizing', 'UX-121'], ['radius', 'UX-122'], ['type', 'UX-123']],
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an unusable scale suppresses under that scale\'s own mode', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-group-sup-'));
+  try {
+    writeFileSync(join(root, 'a.css'), '.a { width: 18px; border-radius: 3px; font-size: 13px; }\n');
+    const { suppressed } = scanRepo(root, { styling: { tokenSource: [] }, tokens: {} }, {});
+    assert.deepEqual(
+      suppressed.map((s) => [s.groups.join(), s.id]).sort(),
+      [['radius', 'UX-122'], ['sizing', 'UX-121'], ['type', 'UX-123']],
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+const MOTION_PROFILE = {
+  styling: { tokenSource: [] },
+  tokens: { motion: { '--m1': '150ms', '--m2': '200ms', '--m3': '300ms' } },
+};
+
+// Every one of these came from a real repository's motion distribution.
+test('a duration-shaped value outside any motion context is not measured', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-motion-ctx-'));
+  try {
+    writeFileSync(join(root, 'a.spec.ts'), [
+      "it('404s rather than 500s for an id that is not a member', async () => {});",
+      "it('keeps the full 3s drain window in production', async () => {});",
+      "expect(() => validateEnv({ WEBHOOK_TIMEOUT: '10s' })).toThrow();",
+      "const bio = 'he began in student politics in the early 2060s';",
+      '',
+    ].join('\n'));
+    const { findings, suppressed } = scanRepo(root, MOTION_PROFILE, {});
+    assert.deepEqual(findings, []);
+    assert.deepEqual(suppressed, [{ id: 'UX-103', reason: 'no-context', kind: 'time', count: 5 }]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a duration is measured wherever the code says it is one', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-motion-ok-'));
+  try {
+    writeFileSync(join(root, 'a.css'), [
+      '.a { transition: all 0.25s; }',
+      '.b {',
+      '  transition:',
+      '    color 251ms ease,',
+      '    transform 252ms;',
+      '}',
+      '.c { animation: spin 253ms linear infinite; }',
+      '',
+    ].join('\n'));
+    writeFileSync(join(root, 'b.tsx'), [
+      "const FADE_DURATION = '254ms';",
+      "const nav = open ? 'left 255ms cubic-bezier(0.4, 0, 0.2, 1)' : 'none';",
+      'const d = <div className="duration-[256ms] [animation-delay:257ms]" />;',
+      "const s = { transitionDuration: '258ms' };",
+      '',
+    ].join('\n'));
+    const { findings, suppressed } = scanRepo(root, MOTION_PROFILE, {});
+    assert.deepEqual(findings.map((f) => f.value).sort(),
+      ['0.25s', '251ms', '252ms', '253ms', '254ms', '255ms', '256ms', '257ms', '258ms']);
+    assert.ok(findings.every((f) => f.id === 'UX-103' && f.group === 'motion'));
+    assert.deepEqual(suppressed, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a transition earlier on the line does not vouch for a later declaration', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-motion-leak-'));
+  try {
+    writeFileSync(join(root, 'a.ts'), "const a = { transition: '200ms' }; log('retry in 5s');\n");
+    const { findings, suppressed } = scanRepo(root, MOTION_PROFILE, {});
+    assert.deepEqual(findings.map((f) => f.value), ['200ms']);
+    assert.equal(suppressed[0].count, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// A codebase whose container tokens are named `--wrap-max` has a sizing
+// scale the classifier cannot see. The suppression used to say "0 distinct
+// values" and stop; now it names the tokens that might be it.
+test('a sizing suppression names the spacing tokens filed there by value alone', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-unclaimed-'));
+  try {
+    writeFileSync(join(root, 'a.css'), '.a { max-width: 1184px; }\n');
+    const profile = {
+      styling: { tokenSource: [] },
+      tokens: { spacing: { '--space-1': '4px', '--wrap-max': '1200px', '--shell': '960px' } },
+    };
+    const { suppressed } = scanRepo(root, profile, {});
+    const sizing = suppressed.find((s) => s.id === 'UX-121');
+    assert.deepEqual(sizing.unclaimedTokens, ['--shell', '--wrap-max']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a sizing suppression with nothing misfiled carries no unclaimed list', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-unclaimed-none-'));
+  try {
+    writeFileSync(join(root, 'a.css'), '.a { max-width: 1184px; }\n');
+    const profile = { styling: { tokenSource: [] }, tokens: { spacing: { '--space-1': '4px' } } };
+    const { suppressed } = scanRepo(root, profile, {});
+    assert.equal('unclaimedTokens' in suppressed.find((s) => s.id === 'UX-121'), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -134,9 +134,16 @@ arithmetic progression a spacing scale is, so do not force one.
 
 When you do propose sizing tokens, name them so they land in the group:
 `--container-*`, `--breakpoint-*`, `--screen-*` and names containing
-`width`, `height` or `size` are read as sizing. A token named `--space-96`
-lands in spacing however wide it is, and the sizing suppression will still
-report no scale.
+`width`, `height` or `size` are read as sizing, and so are `--layout-*` and
+`--col-*` when their value is a length and the name has no spacing word in
+it. A token named `--space-96` lands in spacing however wide it is, and the
+sizing suppression will still report no scale.
+
+When that suppression lists tokens "filed under spacing by value alone",
+those are the existing tokens no name rule claimed. Check each one: a
+container or breakpoint among them is the sizing scale under another name,
+and renaming it is the fix. Do not rename without asking. Tokens are the
+repository's public vocabulary.
 
 ## Re-running on a repo that already has DESIGN.md
 

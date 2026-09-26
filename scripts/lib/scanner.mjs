@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { walkFiles } from './detect.mjs';
 import { parseColor, deltaE, parseScalar, scalarDistance } from './color.mjs';
-import { isUsableScale } from './tokens.mjs';
+import { isUsableScale, nameKind } from './tokens.mjs';
 
 export const DEFAULT_THRESHOLDS = { color: 0.10, scalar: 0.15 };
 
@@ -171,13 +171,26 @@ const PATTERNS = [
   { kind: 'time', re: new RegExp(`${NOT_BEFORE}${NUMBER}m?s${NOT_AFTER}`, 'g') },
 ];
 
-const KIND_TO_ID = { color: 'UX-101', length: 'UX-102', time: 'UX-103' };
-// Lengths are absent on purpose. Since the scanner began failing closed a
-// length's groups come from HINT_GROUPS or it gets none at all, so a `length`
-// entry here would be unreachable — and the one that used to sit here still
-// named the pre-split group set, documenting behaviour the scanner had
-// stopped having.
-const KIND_TO_GROUPS = { color: ['color'], time: ['motion'] };
+// A finding's mode follows the scale it was measured against, not the
+// literal's lexical kind. One mode for every length meant a container width
+// was reported as "a spacing value", and a mode broad enough to fit widths,
+// radii and font sizes at once could say nothing specific about any of them.
+export const GROUP_TO_ID = {
+  color: 'UX-101',
+  spacing: 'UX-102',
+  motion: 'UX-103',
+  sizing: 'UX-121',
+  radius: 'UX-122',
+  type: 'UX-123',
+};
+// A literal that was never measured belongs to no scale, so its suppression
+// is filed under the mode for its kind.
+const UNMEASURED_ID = { length: 'UX-102', time: 'UX-103' };
+// Lengths and durations are absent on purpose: both fail closed on their
+// context hint, so their groups come from HINT_GROUPS or they get none at
+// all. Colours have no hint concept — a hex value is a colour wherever it
+// is written.
+const KIND_TO_GROUPS = { color: ['color'] };
 
 // How many of an unusable group's own literals a suppression carries. A
 // report is read, not queried: twelve rows is enough to see the shape of the
@@ -224,7 +237,7 @@ function summariseSuppression(entry) {
 // A shorthand's later values keep the property's hint: both values in
 // "padding: 12px 16px" are hinted `spacing`, via SHORTHAND_VALUE below.
 const CONTEXT_WINDOW = 48;
-const HINT_GROUPS = { type: ['type'], radius: ['radius'], spacing: ['spacing'], sizing: ['sizing'] };
+const HINT_GROUPS = { type: ['type'], radius: ['radius'], spacing: ['spacing'], sizing: ['sizing'], motion: ['motion'] };
 
 // A prefix/property name must sit at a real word boundary — preceded by the
 // start of the window or a non-identifier character — so a coincidental
@@ -353,6 +366,39 @@ const HINT_MATCHERS = [
   ]],
 ];
 
+// A number followed by `s` is a duration only when something says it is.
+// Unconditionally it is also an HTTP status in a test name ("404s for a
+// missing thread"), a timeout in prose ("the full 3s drain window"), an
+// environment value ('10s') and a decade ("the early 2060s") — across four
+// real repositories most of what the time pattern matched outside stylesheets
+// was one of those, and they sat in the motion distribution as if they were
+// the raw material for a motion scale. Stripping comments would not have
+// helped: they are strings.
+//
+// So a duration fails closed exactly as a length does, and three shapes vouch
+// for one. A motion word before it on the same declaration — a transition or
+// animation property in any spelling, a duration/delay utility, a variable
+// named for its duration. An easing or fill keyword right after it, which is
+// what a shorthand entry in a quoted string looks like ('left 0.3s ease').
+// Or the line is nothing but a property and the duration, which is how a
+// multi-line transition list continues ("  transform 0.1s,").
+const MOTION_WORD = /transition|animation|animate|duration|delay|motion/i;
+const EASING_AFTER = /^\s*(?:cubic-bezier\(|steps\(|(?:ease(?:-in-out|-in|-out)?|linear|step-start|step-end|infinite|forwards|backwards|alternate)(?![\w-]))/i;
+const LIST_ENTRY_BEFORE = /^\s*[a-z-]+\s+$/i;
+const LIST_ENTRY_AFTER = /^\s*[,;]?\s*$/;
+
+function motionHint(line, matchIndex, matchLength) {
+  const before = line.slice(Math.max(0, matchIndex - CONTEXT_WINDOW), matchIndex);
+  // The declaration the literal sits in: nothing past the last `;`, `{` or
+  // `}`, so a transition earlier on the line cannot vouch for a later value.
+  const declaration = before.slice(Math.max(before.lastIndexOf(';'), before.lastIndexOf('{'), before.lastIndexOf('}')) + 1);
+  const after = line.slice(matchIndex + matchLength);
+  if (MOTION_WORD.test(declaration)) return 'motion';
+  if (EASING_AFTER.test(after)) return 'motion';
+  if (LIST_ENTRY_BEFORE.test(line.slice(0, matchIndex)) && LIST_ENTRY_AFTER.test(after)) return 'motion';
+  return null;
+}
+
 function contextHint(line, matchIndex) {
   const window = line.slice(Math.max(0, matchIndex - CONTEXT_WINDOW), matchIndex);
   for (const [hint, patterns] of HINT_MATCHERS) {
@@ -401,7 +447,9 @@ function scanLiterals(text) {
           const scalar = parseScalar(m[0]);
           if (scalar && scalar.value === 0) continue;
         }
-        const hint = kind === 'length' ? contextHint(line, m.index) : null;
+        let hint = null;
+        if (kind === 'length') hint = contextHint(line, m.index);
+        else if (kind === 'time') hint = motionHint(line, m.index, m[0].length);
         out.push({ line: index + 1, column: m.index + 1, value: m[0], kind, hint });
       }
     }
@@ -447,6 +495,18 @@ function inScope(file, scope) {
   return file === normalized || file.startsWith(`${normalized}/`);
 }
 
+// Spacing tokens that no name rule claimed — filed by their length value
+// alone. Every other token in the group was put there because its name says
+// spacing; these are the ones nothing vouched for, and so the only ones that
+// might be dimensions under another name.
+const UNCLAIMED_SAMPLE = 8;
+function unclaimedLengthTokens(tokens) {
+  return Object.keys(tokens?.spacing ?? {})
+    .filter((name) => nameKind(name) === null)
+    .sort()
+    .slice(0, UNCLAIMED_SAMPLE);
+}
+
 export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRESHOLDS } = {}) {
   const findings = [];
   const skipped = [];
@@ -479,20 +539,19 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
     const startLength = findings.length;
     try {
       for (const literal of scanLiterals(text)) {
-        // A length whose context we could not identify gets no group at all.
-        // The old `|| KIND_TO_GROUPS[literal.kind]` matched it against every
-        // length scale at once, so a box-shadow offset of 10px was offered a
-        // 10px border-radius token: an exact numeric match and a meaningless
-        // one. Colours and durations have no hint concept and one group each,
-        // so they keep taking the map.
-        const groups = literal.kind === 'length'
-          ? (HINT_GROUPS[literal.hint] ?? null)
-          : KIND_TO_GROUPS[literal.kind];
+        // A length or duration whose context we could not identify gets no
+        // group at all. The old `|| KIND_TO_GROUPS[literal.kind]` matched a
+        // length against every length scale at once, so a box-shadow offset
+        // of 10px was offered a 10px border-radius token: an exact numeric
+        // match and a meaningless one. Colours have no hint concept and one
+        // group, so they keep taking the map.
+        const groups = KIND_TO_GROUPS[literal.kind] ?? HINT_GROUPS[literal.hint] ?? null;
 
         if (groups === null) {
-          const tally = suppressed.get('UX-102|no-context');
+          const id = UNMEASURED_ID[literal.kind];
+          const tally = suppressed.get(`${id}|no-context`);
           if (tally) tally.count += 1;
-          else suppressed.set('UX-102|no-context', { id: 'UX-102', reason: 'no-context', count: 1 });
+          else suppressed.set(`${id}|no-context`, { id, reason: 'no-context', kind: literal.kind, count: 1 });
           continue;
         }
         const candidates = {};
@@ -502,7 +561,7 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
         // and say so once, with a count, rather than emit hundreds of rows
         // measured against a scale that is not there.
         if (!isUsableScale(candidates)) {
-          const id = KIND_TO_ID[literal.kind];
+          const id = GROUP_TO_ID[groups[0]];
           let tally = suppressed.get(`${id}|${groups.join('|')}`);
           if (tally) tally.count += 1;
           else {
@@ -519,6 +578,16 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
               // number that looks tidier than the code is.
               literals: new Map(),
             };
+            // An empty sizing group is the one a repository most often has
+            // tokens for under names the classifier does not read as
+            // dimensions — `--wrap-max`, `--shell` — and those land in
+            // spacing on their value alone. Without naming them the
+            // suppression says "no sizing scale" to a codebase that has one,
+            // and nothing tells the reader where it went.
+            if (groups[0] === 'sizing') {
+              const unclaimed = unclaimedLengthTokens(profile.tokens);
+              if (unclaimed.length) tally.unclaimedTokens = unclaimed;
+            }
             suppressed.set(`${id}|${groups.join('|')}`, tally);
           }
           tally.literals.set(literal.value, (tally.literals.get(literal.value) ?? 0) + 1);
@@ -526,7 +595,7 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
         }
         const hit = nearestToken(literal, candidates, thresholds);
         findings.push({
-          id: KIND_TO_ID[literal.kind],
+          id: GROUP_TO_ID[groups[0]],
           file,
           line: literal.line,
           column: literal.column,

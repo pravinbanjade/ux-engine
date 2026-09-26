@@ -60,6 +60,16 @@ const NAME_RULES = [
   [/spacing|space|gap|size|inset/, 'spacing'],
 ];
 
+// Layout vocabulary that names a dimension without saying width: a
+// `--layout-md` content column or a `--col-8` grid track. These words are
+// weaker than the sizing rule's own — `--layout-gap` and `--column-gap` are
+// gaps, and `--grid-cols: repeat(12, 1fr)` is not a length at all — so the
+// rule claims a token only when its name carries no spacing word and its
+// value is a length. Anything it declines falls through exactly as before.
+const LAYOUT_NAME = /layout|\bcol(?:umn)?s?\b|measure/;
+const SPACING_WORD = /gap|gutter|padding|margin|space|spacing|inset/;
+const LAYOUT_VALUE = /^-?\d+(\.\d+)?(px|rem|em|%)$/;
+
 const COLOR_VALUE = /^(#[0-9a-fA-F]{3,8}|(rgb|rgba|hsl|hsla|oklch|oklab|lab|lch|color)\()/;
 const TIME_VALUE = /^\d+(\.\d+)?m?s$/;
 const LENGTH_VALUE = /^-?\d+(\.\d+)?(px|rem|em)$/;
@@ -76,14 +86,24 @@ export function categorizeToken(name, value) {
   // correct classification away from the name rules, it only fixes the
   // cases they got wrong.
   if (parseColor(value) !== null) return 'color';
-  for (const [pattern, kind] of NAME_RULES) {
-    if (pattern.test(name)) return kind;
-  }
   const v = String(value).trim();
+  const named = nameKind(name);
+  if (named) return named;
+  if (LAYOUT_NAME.test(name) && !SPACING_WORD.test(name) && LAYOUT_VALUE.test(v)) return 'sizing';
   if (COLOR_VALUE.test(v)) return 'color';
   if (TIME_VALUE.test(v)) return 'motion';
   if (LENGTH_VALUE.test(v)) return 'spacing';
   return 'other';
+}
+
+// The group a token's name alone puts it in, or null when no name rule
+// claims it and its value has to decide. The scanner uses the null case to
+// find tokens that sit in a group on their value alone.
+export function nameKind(name) {
+  for (const [pattern, kind] of NAME_RULES) {
+    if (pattern.test(name)) return kind;
+  }
+  return null;
 }
 
 export function groupTokens(props) {
