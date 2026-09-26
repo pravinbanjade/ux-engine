@@ -119,12 +119,18 @@ are dimensions. Do not merge the two distributions, and do not propose one
 scale covering both — a repository whose gutters are `0.25rem` apart and
 whose containers are `1184px` and `1440px` has two questions, not one.
 
-A sizing distribution led by `100%`, `100vh` or `50%` is telling you it is
-mostly layout, not a scale. In OpenWA, 96 of 338 sizing literals are
-`100%` and 12 are `100vh`. Nothing is gained by tokenising those — say so
-and move to the fixed widths underneath them, which is where container and
-breakpoint tokens belong. A repository whose whole sizing distribution is
-viewport fractions does not want a sizing scale at all; say that too.
+What a sizing distribution shows is only the fixed lengths. The scanner
+lexes `px`, `rem` and `em` and nothing else, so `100%`, `100vh` and `50%`
+— most of what a layout is actually built from — never appear in it. Do
+not read the list as the whole story of a repository's sizing, and do not
+report a distinct-value count as if it covered every width in the code.
+
+Read the values that are there for what they are: `1184px` and `1440px`
+are page containers, `768px` and `480px` are breakpoints, `400px` and
+`280px` are panel and sidebar widths. Those are what container and
+breakpoint tokens are made of, and they group by role rather than by
+sitting at even multiples of a base — a sizing scale is rarely the
+arithmetic progression a spacing scale is, so do not force one.
 
 When you do propose sizing tokens, name them so they land in the group:
 `--container-*`, `--breakpoint-*`, `--screen-*` and names containing
