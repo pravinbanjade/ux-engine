@@ -163,3 +163,6 @@ was actually answered, and deciding whether a structure serves the answer.
 - Do not invent a mode id. Every finding cites an id that exists in the index.
 - Do not write anywhere outside `.ux-engine/wireframes/` and the source files
   the user approved.
+- Do not install dependencies to typecheck or lint. If `node_modules` is
+  missing, say that those checks were not run. An install fetches from the
+  network and can change the lockfile the user reviews.
