@@ -67,13 +67,13 @@ test('no skill or command hardcodes a stack name outside an example', () => {
 });
 
 test('the audit skill and both commands exist', () => {
-  assert.ok(existsSync(join(root, 'skills/ux-audit/SKILL.md')));
+  assert.ok(existsSync(join(root, 'skills/audit-ui/SKILL.md')));
   assert.ok(existsSync(join(root, 'commands/ux-audit.md')));
   assert.ok(existsSync(join(root, 'commands/ux-review.md')));
 });
 
 test('the audit skill routes every mechanical step through a script', () => {
-  const skill = readFileSync(join(root, 'skills/ux-audit/SKILL.md'), 'utf8');
+  const skill = readFileSync(join(root, 'skills/audit-ui/SKILL.md'), 'utf8');
   for (const script of ['check-profile.mjs', 'scan-off-system.mjs', 'report-findings.mjs', 'select-modes.mjs']) {
     assert.match(skill, new RegExp(script.replace('.', '\\.')), `skill must call ${script}`);
   }
@@ -88,26 +88,26 @@ test('the review command scopes to the diff and the audit command to a path', ()
 });
 
 test('the restyle skill and command exist', () => {
-  assert.ok(existsSync(join(root, 'skills/ux-restyle/SKILL.md')));
+  assert.ok(existsSync(join(root, 'skills/restyle-ui/SKILL.md')));
   assert.ok(existsSync(join(root, 'commands/ux-restyle.md')));
 });
 
 test('the restyle skill routes every mechanical step through a script', () => {
-  const skill = readFileSync(join(root, 'skills/ux-restyle/SKILL.md'), 'utf8');
+  const skill = readFileSync(join(root, 'skills/restyle-ui/SKILL.md'), 'utf8');
   for (const script of ['check-profile.mjs', 'scan-off-system.mjs', 'report-findings.mjs', 'restyle.mjs']) {
     assert.match(skill, new RegExp(script.replace('.', '\\.')), `skill must call ${script}`);
   }
 });
 
 test('the restyle skill previews before it writes', () => {
-  const skill = readFileSync(join(root, 'skills/ux-restyle/SKILL.md'), 'utf8');
+  const skill = readFileSync(join(root, 'skills/restyle-ui/SKILL.md'), 'utf8');
   const preview = skill.indexOf('--dry-run');
   assert.ok(preview > -1, 'skill must run a dry run');
   assert.ok(preview < skill.indexOf('without `--dry-run`'), 'the dry run must come first');
 });
 
 test('the restyle skill refuses to reuse a stale findings file', () => {
-  const skill = readFileSync(join(root, 'skills/ux-restyle/SKILL.md'), 'utf8');
+  const skill = readFileSync(join(root, 'skills/restyle-ui/SKILL.md'), 'utf8');
   assert.match(skill, /\.ux-engine\/findings\.json/);
   assert.match(skill, /do not reuse/i);
 });
@@ -138,5 +138,34 @@ test('the enforcer can run scripts but cannot edit', () => {
   assert.ok(tools.includes('Bash'), 'the enforcer runs the scanner');
   for (const banned of ['Write', 'Edit', 'NotebookEdit']) {
     assert.ok(!tools.includes(banned), `ux-system-enforcer must not have ${banned}`);
+  }
+});
+
+// A skill named like a command is unreachable. Claude Code resolves
+// `ux-engine:ux-audit` to the command, so a command that says "use the
+// ux-audit skill" hands itself back ("already loaded; instructions
+// unchanged") and SKILL.md never loads. Found by running /ux-audit headless:
+// the model fell back to `find /` to locate the skill file on disk.
+test('no skill shares a name with a command', () => {
+  const commands = readdirSync(join(root, 'commands'))
+    .filter((f) => f.endsWith('.md'))
+    .map((f) => parseFrontmatter(readFileSync(join(root, 'commands', f), 'utf8')).data.name ?? f.replace(/\.md$/, ''));
+  for (const d of readdirSync(join(root, 'skills'))) {
+    const file = join(root, 'skills', d, 'SKILL.md');
+    if (!existsSync(file)) continue;
+    const name = parseFrontmatter(readFileSync(file, 'utf8')).data.name;
+    assert.equal(name, d, `skills/${d}: frontmatter name "${name}" differs from its directory`);
+    assert.ok(!commands.includes(name), `skill "${name}" collides with the /${name} command`);
+  }
+});
+
+test('every command that delegates names a skill that exists, fully qualified', () => {
+  const skills = readdirSync(join(root, 'skills')).filter((d) => existsSync(join(root, 'skills', d, 'SKILL.md')));
+  for (const f of readdirSync(join(root, 'commands')).filter((x) => x.endsWith('.md'))) {
+    const text = readFileSync(join(root, 'commands', f), 'utf8');
+    for (const [, ref] of text.matchAll(/Use the `([^`]+)` skill/g)) {
+      const name = ref.replace(/^ux-engine:/, '');
+      assert.ok(skills.includes(name), `${f}: names a skill "${ref}" that does not exist`);
+    }
   }
 });

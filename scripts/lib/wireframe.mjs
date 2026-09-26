@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 // The wireframe artifact: every rule about its *shape*. Rules about whether an
-// answer is thoughtful or a hierarchy is right belong to skills/ux-design, not
+// answer is thoughtful or a hierarchy is right belong to skills/design-ui, not
 // here — a validator that graded judgment would be inventing policy.
 
 export const WIREFRAME_VERSION = 1;

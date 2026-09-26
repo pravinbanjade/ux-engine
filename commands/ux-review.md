@@ -3,7 +3,7 @@ name: ux-review
 description: Review the working diff against this repo's recorded design system before committing, reporting only findings the diff introduced or touched.
 ---
 
-Use the `ux-audit` skill to review the working diff in the repository at the
+Use the `ux-engine:audit-ui` skill to review the working diff in the repository at the
 current working directory.
 
 Scope: pass `--scope diff` to the report script, with `--base <ref>` if

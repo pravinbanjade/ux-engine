@@ -3,7 +3,7 @@ name: ux-design-system
 description: Detect this repo's design system and record it as DESIGN.md and .ux-engine/profile.json. Run once per repo before any other ux-engine command.
 ---
 
-Use the `design-system` skill to detect and record the design system for the
+Use the `ux-engine:design-system` skill to detect and record the design system for the
 repository at the current working directory.
 
 If the user named a different path in `$ARGUMENTS`, use that as the repo root.
