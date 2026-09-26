@@ -27,7 +27,19 @@ test('package is zero-dependency ESM', () => {
   assert.equal(p.type, 'module');
   assert.equal(p.dependencies, undefined);
   assert.equal(p.devDependencies, undefined);
-  assert.equal(p.scripts.test, 'node --test "tests/**/*.test.mjs"');
+});
+
+test('the test script does not depend on the runner expanding a glob', () => {
+  // `engines` promises Node 20, and CI has a 20 leg to keep that promise
+  // honest. Node 20's test runner does not expand glob patterns — it takes
+  // `tests/**/*.test.mjs` as a literal path and exits 1 with "Could not
+  // find", which is how a green local run on Node 22 shipped a red CI.
+  // Bare `node --test` searches the working directory recursively on every
+  // version in the matrix, so the command has no pattern to expand.
+  const p = read('../package.json');
+  assert.equal(p.scripts.test, 'node --test');
+  assert.doesNotMatch(p.scripts.test, /\*/, 'a glob here breaks the Node 20 leg');
+  assert.equal(p.engines.node, '>=20');
 });
 
 test('the plugin and package versions agree', () => {
