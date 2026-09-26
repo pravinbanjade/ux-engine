@@ -92,9 +92,18 @@ cannot do: deciding whether a component actually exhibits a failure mode.
    Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/report-findings.mjs --scanner
    <scan.json> --model <model.json> --profile <repo-root>/.ux-engine/profile.json
    --design <repo-root>/DESIGN.md --root <repo-root>` plus the scope flags the
-   command gives you. Present its output as it is; do not re-rank or re-word
-   it. If it exits 4, your findings JSON was malformed — read the errors, fix
-   the rows it named, and run it again.
+   command gives you. If it exits 4, your findings JSON was malformed — read
+   the errors, fix the rows it named, and run it again.
+
+   The script writes the full report to `<repo-root>/.ux-engine/report.md`
+   as well as printing it. Present it without re-ranking or re-wording:
+   - **20 findings or fewer:** show the report as printed.
+   - **More than 20:** show the summary line, then every High row exactly as
+     printed, then one line per Medium and Low mode with its count. End
+     with the path to `report.md` for the rest.
+
+   An excerpt quotes rows. It never paraphrases them, merges them, or
+   replaces a row with your own description of it.
 
 ## What not to do
 

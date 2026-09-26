@@ -241,3 +241,23 @@ test('the CLI carries the scanner suppressions into the envelope and the report'
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// A sixty-finding report gets condensed when it is presented. The full text
+// has to exist somewhere a reader can open.
+test('the CLI writes the rendered report beside the envelope', () => {
+  const dir = workspace();
+  const { status, stdout } = run(base(dir), dir);
+  assert.equal(status, 0);
+  assert.equal(readFileSync(join(dir, '.ux-engine/report.md'), 'utf8'), stdout);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('--report writes the rendered report where it is told, even with --json', () => {
+  const dir = workspace();
+  const target = join(dir, 'elsewhere/audit.md');
+  const { status, stdout } = run([...base(dir), '--report', target, '--json'], dir);
+  assert.equal(status, 0);
+  assert.equal(JSON.parse(stdout).version, 1);
+  assert.match(readFileSync(target, 'utf8'), /^# UX findings/);
+  rmSync(dir, { recursive: true, force: true });
+});
