@@ -142,6 +142,7 @@ const envelope = buildEnvelope({
   profileHash: sha256(profileText),
   scope: { kind: scope, value: scopeValue },
   exceptionsApplied,
+  scannedPackage: scanOutput.scannedPackage ?? null,
 });
 
 const rendered = `${renderReport(envelope, modes)}\n`;

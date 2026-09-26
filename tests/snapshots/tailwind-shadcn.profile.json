@@ -29,7 +29,8 @@
     "dir": "src/components/ui",
     "library": "shadcn",
     "variantMechanism": "cva",
-    "primitives": "radix"
+    "primitives": "radix",
+    "package": ""
   },
   "tokens": {
     "color": {

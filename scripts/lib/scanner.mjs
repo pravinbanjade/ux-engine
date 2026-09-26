@@ -517,7 +517,16 @@ function unclaimedLengthTokens(tokens) {
     .slice(0, UNCLAIMED_SAMPLE);
 }
 
-export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRESHOLDS } = {}) {
+export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRESHOLDS, allPackages = false } = {}) {
+  // An explicit path is the caller's decision and always wins. Without one,
+  // a monorepo is scanned only inside the package that holds its UI: across
+  // four real repositories the rest was API seed data, server logging and
+  // test names, reported under a heading about the UI. A profile written
+  // before the package was recorded has no `components.package` and is
+  // scanned whole, as it always was.
+  const uiPackage = profile.components?.package || null;
+  const scannedPackage = !path && !allPackages ? uiPackage : null;
+  if (scannedPackage) path = scannedPackage;
   const findings = [];
   const skipped = [];
   const suppressed = new Map();
@@ -630,5 +639,7 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
       skipped.push({ file, reason: `parse-error:${errorType}` });
     }
   }
-  return { findings, skipped, suppressed: [...suppressed.values()].map(summariseSuppression) };
+  const result = { findings, skipped, suppressed: [...suppressed.values()].map(summariseSuppression) };
+  if (scannedPackage) result.scannedPackage = scannedPackage;
+  return result;
 }

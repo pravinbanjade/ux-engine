@@ -27,7 +27,8 @@
     "dir": "src/components",
     "library": null,
     "variantMechanism": "props",
-    "primitives": null
+    "primitives": null,
+    "package": ""
   },
   "tokens": {
     "color": {

@@ -10,7 +10,7 @@ const flag = (name, fallback) => {
   return i === -1 ? fallback : args[i + 1];
 };
 
-const USAGE = 'Usage: scan-off-system.mjs --profile <path> [--root <dir>] [--path <dir>] [--threshold-color N] [--threshold-scalar N]';
+const USAGE = 'Usage: scan-off-system.mjs --profile <path> [--root <dir>] [--path <dir>] [--all-packages] [--threshold-color N] [--threshold-scalar N]';
 
 const profilePath = flag('profile');
 if (!profilePath) {
@@ -50,5 +50,5 @@ const thresholds = {
   scalar: Number(flag('threshold-scalar', DEFAULT_THRESHOLDS.scalar)),
 };
 
-const result = scanRepo(root, profile, { path: flag('path', null), thresholds });
+const result = scanRepo(root, profile, { path: flag('path', null), thresholds, allPackages: args.includes('--all-packages') });
 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
