@@ -172,7 +172,12 @@ const PATTERNS = [
 ];
 
 const KIND_TO_ID = { color: 'UX-101', length: 'UX-102', time: 'UX-103' };
-const KIND_TO_GROUPS = { color: ['color'], length: ['spacing', 'radius', 'type'], time: ['motion'] };
+// Lengths are absent on purpose. Since the scanner began failing closed a
+// length's groups come from HINT_GROUPS or it gets none at all, so a `length`
+// entry here would be unreachable — and the one that used to sit here still
+// named the pre-split group set, documenting behaviour the scanner had
+// stopped having.
+const KIND_TO_GROUPS = { color: ['color'], time: ['motion'] };
 
 // How many of an unusable group's own literals a suppression carries. A
 // report is read, not queried: twelve rows is enough to see the shape of the
@@ -527,6 +532,15 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
           column: literal.column,
           value: literal.value,
           kind: literal.kind,
+          // Which scale this literal was actually measured against. It was
+          // computed just above to pick the candidate tokens and then
+          // thrown away, so every consumer downstream — the report row, the
+          // mode a reader looks up — had to assume spacing and was wrong
+          // for 403 of the 403 length findings four real repositories
+          // produced. Joined rather than indexed: every group list is one
+          // element today, and a hint that ever maps to two should read as
+          // "spacing+sizing", not silently lose one.
+          group: groups.join('+'),
           nearestToken: hit?.token ?? null,
           distance: hit?.distance ?? null,
         });

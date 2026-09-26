@@ -1237,3 +1237,53 @@ test('a width literal is matched against the sizing scale, not the spacing scale
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// Every UX-102 finding this scanner has ever emitted resolved to a mode
+// titled "Hard-coded spacing value bypasses the spacing scale". Measured
+// across four repositories, 403 of 403 of them came from the `type` or
+// `radius` scale and not one from spacing — the group was computed to pick
+// the candidate tokens and then dropped on the floor. Carrying it on the
+// finding is what lets the row, and everything downstream, say which scale
+// the literal was actually measured against.
+test('a finding records the token group its literal was measured against', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-group-'));
+  try {
+    writeFileSync(join(root, 'a.css'), [
+      '.a { font-size: 13px; }',
+      '.b { padding: 13px; }',
+      '.c { width: 13px; }',
+      '.d { border-radius: 13px; }',
+      '',
+    ].join('\n'));
+    const { findings } = scanRepo(root, HINT_FIXTURE_PROFILE, {});
+    assert.deepEqual(
+      findings.map((f) => [f.line, f.group]),
+      [[1, 'type'], [2, 'spacing'], [3, 'sizing'], [4, 'radius']],
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a colour and a duration finding record their own single group', () => {
+  // These two never had a hint and never competed for a scale, but a
+  // consumer reading `group` should not have to special-case them out.
+  const root = mkdtempSync(join(tmpdir(), 'ux-engine-group2-'));
+  try {
+    writeFileSync(join(root, 'a.css'), [
+      '.a { color: #123457; }',
+      '.b { transition: 181ms; }',
+      '',
+    ].join('\n'));
+    const { findings } = scanRepo(root, {
+      styling: { tokenSource: [] },
+      tokens: {
+        color: { '--c1': '#123456', '--c2': '#654321', '--c3': '#abcdef' },
+        motion: { '--m1': '150ms', '--m2': '180ms', '--m3': '300ms' },
+      },
+    }, {});
+    assert.deepEqual(findings.map((f) => f.group), ['color', 'motion']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
