@@ -82,6 +82,7 @@ const plan = planSubstitutions(envelope, {
   root,
   tokenSource,
   colorTokens: profile.tokens?.color ?? null,
+  tokens: profile.tokens ?? null,
   themedTokens: profile.styling.themedTokens ?? [],
   themeValues: themeValues(tokenCss),
   adoptTheme: has('adopt-theme'),

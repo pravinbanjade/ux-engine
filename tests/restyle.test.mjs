@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { substitutionFor, planSubstitutions, applyEdits, renderPlan, chooseColourToken, tokenRole, isStateToken, isScopedToken, colourReference } from '../scripts/lib/restyle.mjs';
+import { substitutionFor, planSubstitutions, applyEdits, renderPlan, chooseColourToken, tokenRole, isStateToken, isScopedToken, colourReference, checkScalar, EXACT_COLOR } from '../scripts/lib/restyle.mjs';
 
 const at = (lineText, value, token) => substitutionFor({
   lineText,
@@ -145,8 +145,8 @@ test('two identical literals on one line plan two distinct edits', () => {
   withRepo({ 'src/A.tsx': `${line}\n` }, (root) => {
     const envelope = {
       findings: [
-        scannerFinding({ id: 'UX-102', kind: 'length', value: '17px', nearestToken: '--spacing-4', column: line.indexOf('17px') + 1 }),
-        scannerFinding({ id: 'UX-102', kind: 'length', value: '17px', nearestToken: '--spacing-4', column: line.lastIndexOf('17px') + 1 }),
+        scannerFinding({ id: 'UX-102', kind: 'length', value: '17px', nearestToken: '--spacing-4', distance: 0, column: line.indexOf('17px') + 1 }),
+        scannerFinding({ id: 'UX-102', kind: 'length', value: '17px', nearestToken: '--spacing-4', distance: 0, column: line.lastIndexOf('17px') + 1 }),
       ],
     };
     const { edits } = planSubstitutions(envelope, { root });
@@ -478,13 +478,14 @@ test('the plan applies the role-aware choice and sends a status match to a human
 test('a close but visible difference is suggested, not written', () => {
   // Measured pairs from real repositories: white against an orange tint, a
   // slate grey against a dark teal, two different greens against one brand.
-  for (const [value, token] of [['#fff', '#fff7ed'], ['#64748b', '#0f766e'], ['#4ade80', '#25d366']]) {
+  // And two neighbouring greys, zinc-500 for gray-500: 0.012 apart.
+  for (const [value, token] of [['#fff', '#fff7ed'], ['#64748b', '#0f766e'], ['#4ade80', '#25d366'], ['#71717a', '#6b7280']]) {
     assert.deepEqual(
       chooseColourToken({ value, property: 'fill', tokens: { '--t': token } }),
       { manual: true, reason: 'approximate', token: '--t' },
     );
   }
-  assert.deepEqual(chooseColourToken({ value: '#71717a', property: 'fill', tokens: { '--t': '#6b7280' } }), { token: '--t' });
+  assert.deepEqual(chooseColourToken({ value: '#71717a', property: 'fill', tokens: { '--t': '#71717b' } }), { token: '--t' });
 });
 
 test('a component-scoped token is suggested, not written', () => {
@@ -595,4 +596,64 @@ test('a theme-varying token with no default-theme value is never adopted', () =>
     chooseColourToken({ value: '#f1f5f9', property: 'color', tokens, themed: ['--fg'], themeBase: new Map([['--fg', '#f1f5f9']]) }),
     { token: '--fg', adopted: true },
   );
+});
+
+// The scanner suggests a token within 15%; the restyle promises the page
+// looks the same. 17px beside a 16px token is a suggestion, not an edit.
+test('a length is substituted only when the token holds the same value and unit', () => {
+  assert.equal(checkScalar({ value: '16px', tokenValue: '16px' }), null);
+  assert.equal(checkScalar({ value: '1.5rem', tokenValue: '1.5rem' }), null);
+  assert.equal(checkScalar({ value: '17px', tokenValue: '16px' }), 'approximate');
+  assert.equal(checkScalar({ value: '56px', tokenValue: '48px' }), 'approximate');
+  assert.equal(checkScalar({ value: '16px', tokenValue: '1rem' }), 'different-unit', 'a rem is 16px only at the default root size');
+  assert.equal(checkScalar({ value: '1em', tokenValue: '1rem' }), 'different-unit');
+  assert.equal(checkScalar({ value: '0.2s', tokenValue: '200ms' }), null, 'seconds and milliseconds convert exactly');
+  assert.equal(checkScalar({ value: '250ms', tokenValue: '200ms' }), 'approximate');
+  assert.equal(checkScalar({ value: '16px', tokenValue: 'calc(1rem)' }), 'approximate');
+  assert.equal(checkScalar({ value: '16px', tokenValue: '16px', varying: true }), 'varying-value');
+});
+
+test('the planner holds lengths to the token values in the profile', () => {
+  const line = "const s = { padding: '17px', margin: '16px', gap: '1rem', top: '8px' };";
+  withRepo({ 'src/A.tsx': `${line}\n` }, (root) => {
+    const length = (value, nearestToken, at) => scannerFinding({
+      id: 'UX-102', kind: 'length', group: 'spacing', value, nearestToken, distance: 0.05, column: at + 1,
+    });
+    const envelope = {
+      findings: [
+        length('17px', '--space-4', line.indexOf('17px')),
+        length('16px', '--space-4', line.indexOf('16px')),
+        length('1rem', '--space-4', line.indexOf('1rem')),
+        length('8px', '--space-2', line.indexOf('8px')),
+      ],
+    };
+    const { edits, manual } = planSubstitutions(envelope, {
+      root,
+      tokens: { spacing: { '--space-2': '8px', '--space-4': '16px' } },
+      themedTokens: ['--space-2'],
+    });
+    assert.deepEqual(edits.map((e) => [e.value, e.replacement]), [['16px', 'var(--space-4)']]);
+    assert.deepEqual(manual.map((r) => [r.value, r.reason]), [
+      ['17px', 'approximate'], ['1rem', 'different-unit'], ['8px', 'varying-value'],
+    ]);
+  });
+});
+
+test('a length with no token values to check is applied only at distance zero', () => {
+  const line = "const s = { padding: '17px' };";
+  withRepo({ 'src/A.tsx': `${line}\n` }, (root) => {
+    const finding = scannerFinding({ id: 'UX-102', kind: 'length', value: '17px', nearestToken: '--space-4', distance: 0.0625, column: line.indexOf('17px') + 1 });
+    const { edits, manual } = planSubstitutions({ findings: [finding] }, { root });
+    assert.equal(edits.length, 0);
+    assert.equal(manual[0].reason, 'approximate');
+  });
+});
+
+// #eff6ff is a pale blue. At 0.013 from the grey it was about to replace it
+// passed the old line of 0.02; the tint is visible.
+test('the exact-colour line stops a visible tint and keeps a near copy', () => {
+  assert.equal(EXACT_COLOR, 0.01);
+  const tokens = { '--surface': '240 5% 96.5%', '--white': '#ffffff' };
+  assert.deepEqual(chooseColourToken({ value: '#eff6ff', property: 'background', tokens }), { manual: true, reason: 'approximate', token: '--surface' });
+  assert.deepEqual(chooseColourToken({ value: '#fcfcfc', property: 'background', tokens }), { token: '--white' });
 });

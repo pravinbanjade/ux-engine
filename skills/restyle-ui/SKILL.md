@@ -106,10 +106,20 @@ Each row names the token to use and why the script would not write it:
 - `role-mismatch` — the only close token is meant for a different property,
   such as a text token for a background. Suggest the user add a token for
   this role rather than borrow one.
-- `approximate` — the suggested token is close but visibly different. The
-  script substitutes a colour only when the difference is too small to see
-  (about 0.02 in OKLab), so that a restyle never changes how the page looks.
-  Show the user both colours and let them choose.
+- `approximate` — the suggested token is close but not the same. The script
+  substitutes a colour only when the difference is too small to see (0.01
+  in OKLab), and a length or duration only when the token holds exactly the
+  same value, so that a restyle never changes how the page looks. `17px`
+  beside a 16px token lands here. Show the user both values and let them
+  choose. Moving to the token is a design change, not a repair.
+- `different-unit` — the token holds the same length in another unit, such
+  as `16px` against a `1rem` token. They match only while the root font
+  size is 16px, and an `em` depends on the element. Ask the user whether
+  the root size is ever changed before applying it by hand.
+- `varying-value` — the length token is declared with more than one value,
+  for example redefined in a media query or a density class. The literal is
+  the same everywhere, so substituting it changes the element wherever the
+  token differs. Check those places with the user first.
 - `scoped-token` — the only close token was made for a specific component
   or domain, such as `--chip-academic-accent`. Reusing it elsewhere ties this
   element to that component's next redesign.

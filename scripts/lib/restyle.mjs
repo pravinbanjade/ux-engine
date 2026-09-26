@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { parseColor, deltaE, tokenColorFor, isChannelColor } from './color.mjs';
+import { parseColor, deltaE, tokenColorFor, isChannelColor, parseScalar } from './color.mjs';
 import { DEFAULT_THRESHOLDS } from './scanner.mjs';
 
 // A utility class's arbitrary value — bg-[#3b7d4f], p-[17px] — is the one
@@ -178,7 +178,37 @@ export function isStateToken(name) {
 // same afterwards, so it is held to about the smallest difference a person
 // can see in this colour space; anything further is a design decision and
 // goes to a human with the suggestion.
-export const EXACT_COLOR = 0.02;
+//
+// 0.02 let `#eff6ff`, a pale blue, become a neutral grey page background
+// (`240 5% 96.5%`) at 0.013: under the line, and a tint anyone comparing the
+// two would see. 0.01 still takes what a hand copy really looks like — the
+// same hex, a rounding of an HSL channel, `#fcfcfc` for white at 0.009 —
+// and stops there.
+export const EXACT_COLOR = 0.01;
+
+// A length or a duration is substituted only when the token holds the same
+// value in the same unit. The scanner names the nearest token within 15%, a
+// fair suggestion and a visible change: `padding: 17px` beside a 16px token
+// moves every box it pads by a pixel, and 56px beside a 48px token by eight.
+// Seconds and milliseconds convert exactly. Pixels and rems do not: a rem is
+// 16px only while the root font size is, and an em depends on the element,
+// so `16px` is never written as a `1rem` token. A token declared with more
+// than one value — redefined in a media query, a theme or a density class —
+// is left alone for the same reason a theme-varying colour is.
+const TIME_MS = { ms: 1, s: 1000 };
+
+export function checkScalar({ value, tokenValue, varying = false }) {
+  if (varying) return 'varying-value';
+  const literal = parseScalar(value);
+  const token = parseScalar(tokenValue ?? '');
+  if (!literal || !token) return 'approximate';
+  if (literal.unit in TIME_MS && token.unit in TIME_MS) {
+    return literal.value * TIME_MS[literal.unit] === token.value * TIME_MS[token.unit] ? null : 'approximate';
+  }
+  if (literal.unit === token.unit) return literal.value === token.value ? null : 'approximate';
+  const px = ({ value: v, unit }) => (unit === 'px' ? v : v * 16);
+  return px(literal) === px(token) ? 'different-unit' : 'approximate';
+}
 
 // `themeBase`, when given, is the default-theme value of each theme-varying
 // token, and the caller's consent to use one: such a token is measured
@@ -215,8 +245,13 @@ export function chooseColourToken({ value, property, tokens, themed = [], thresh
     else if (t.themed) reason = 'theme-varying';
     return { manual: true, reason, token: t.name };
   }
-  const best = (wanted && eligible.find((t) => t.role === wanted)) || eligible[0];
-  if (best.distance > EXACT_COLOR) return { manual: true, reason: 'approximate', token: best.name };
+  // Role breaks ties among tokens that would leave the page unchanged; it
+  // does not outrank one. Preferring a role-matched `--surface` at 0.02 over
+  // an exact `--white` gave up on a substitution the exact token allowed.
+  const pick = (list) => (wanted && list.find((t) => t.role === wanted)) || list[0];
+  const exact = eligible.filter((t) => t.distance <= EXACT_COLOR);
+  if (!exact.length) return { manual: true, reason: 'approximate', token: pick(eligible).name };
+  const best = pick(exact);
   return best.adopted ? { token: best.name, adopted: true } : { token: best.name };
 }
 
@@ -248,7 +283,9 @@ const NON_DOM_RENDERER = /(?:\bfrom\s*|\brequire\(\s*|\bimport\s*\(?\s*)['"](?:@
 // does. Without it, the rows that would qualify are marked `adoptable`.
 export function planSubstitutions(envelope, {
   root, tokenSource = [], colorTokens = null, themedTokens = [], themeValues = null, adoptTheme = false,
+  tokens = null,
 }) {
+  const varying = new Set(themedTokens);
   const themeBase = themeValues
     ? new Map([...themeValues].filter(([, v]) => v.base !== null).map(([name, v]) => [name, v.base]))
     : null;
@@ -345,6 +382,18 @@ export function planSubstitutions(envelope, {
       token = choice.token;
       replacement = colourReference(token, choice.adopted ? themeBase.get(token) : colorTokens[token], finding.value);
       if (choice.adopted) otherThemes = themeValues.get(token).others;
+    } else if (finding.kind !== 'color') {
+      // Without the token values (a caller that passed no profile tokens)
+      // the scanner's own distance is the only evidence, and only zero is
+      // close enough.
+      const group = tokens?.[finding.group];
+      const reason = group && token in group
+        ? checkScalar({ value: finding.value, tokenValue: group[token], varying: varying.has(token) })
+        : (finding.distance === 0 ? null : 'approximate');
+      if (reason) {
+        manual.push({ ...finding, reason });
+        continue;
+      }
     }
 
     edits.push({
