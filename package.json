@@ -13,5 +13,6 @@
     "check:profile": "node scripts/check-profile.mjs",
     "scan": "node scripts/scan-off-system.mjs",
     "snapshot:report": "node scripts/report-findings.mjs --scanner /tmp/uxe-scan.json --profile /tmp/uxe-profile.json --root tests/fixtures/tailwind-shadcn --out /tmp/uxe-findings.json"
-  }
+  },
+  "license": "MIT"
 }

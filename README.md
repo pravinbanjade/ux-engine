@@ -6,9 +6,14 @@ of named UX failure modes.
 
 ## Install
 
+In Claude Code:
+
 ```
-/plugin marketplace add pravin/ux-engine
+/plugin marketplace add pravinbanjade/ux-engine
+/plugin install ux-engine@ux-engine
 ```
+
+The scripts need Node.js 20 or later on your `PATH`.
 
 ## Use
 
@@ -134,3 +139,7 @@ npm run select -- --kinds table,form   # the modes that could apply to a surface
 ```
 
 Zero dependencies, runtime and dev.
+
+## License
+
+[MIT](LICENSE)

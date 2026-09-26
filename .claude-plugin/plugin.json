@@ -4,5 +4,7 @@
   "description": "Embeds senior design reasoning into AI-generated UI: detects the design system a project already has, then generates, audits and repairs interfaces against a catalog of named UX failure modes.",
   "author": {
     "name": "Pravin Banjade"
-  }
+  },
+  "license": "MIT",
+  "repository": "https://github.com/pravinbanjade/ux-engine"
 }
