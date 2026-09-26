@@ -67,6 +67,20 @@ cannot do: deciding whether a component actually exhibits a failure mode.
    whole test for whether a mode applies. The rest of the file tells you
    whether a match is really a finding and what to say about it.
 
+   Read each source file in scope once. Most of an audit's cost is reading
+   the code, not the modes. If the scope is large enough to delegate, split
+   it by file: give each subagent its own files plus the full Signal list,
+   and have it return findings JSON. Do not split by mode category. That
+   makes every subagent read every file, and on a 28-page folder it read the
+   code four times over. Do not read files yourself that you have handed to
+   a subagent, and do not use a separate pass just to name surfaces.
+   Whoever reads a file names its kinds in the same pass.
+
+   If the scope holds more than about 15 source files, tell the user how
+   many before judging and offer to narrow it. An audit of a whole folder
+   is a long, expensive run, and a narrower path is often what they
+   wanted.
+
 6. **Write your findings as JSON.**
    One array, each row `{ "id": "UX-NNN", "file": "<repo-relative path>",
    "line": <1-based number or null>, "evidence": "<what in the code shows
