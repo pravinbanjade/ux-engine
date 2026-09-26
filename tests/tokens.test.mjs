@@ -57,7 +57,12 @@ test('extractCustomProperties captures final declaration without trailing semico
 
 test('categorizeToken handles border-* names correctly', () => {
   assert.equal(categorizeToken('--border-radius', '0.5rem'), 'radius');
+  // A border width is a line thickness. It has no group of its own and
+  // reaches `spacing` by the value rule, not by a name rule — but it is
+  // deliberately kept out of `sizing`, where a 1px stroke would be measured
+  // against a 640px container scale.
   assert.equal(categorizeToken('--border-width', '1px'), 'spacing');
+  assert.equal(categorizeToken('--ring-width', '2px'), 'spacing');
   assert.equal(categorizeToken('--border-color', '#fff'), 'color');
   assert.equal(categorizeToken('--color-border', '#fff'), 'color');
 });
@@ -120,4 +125,43 @@ test('isUsableScale tolerates a null or undefined group', () => {
 
 test('MIN_SCALE_VALUES is the documented threshold', () => {
   assert.equal(MIN_SCALE_VALUES, 3);
+});
+
+test('a container or breakpoint token is sizing, not spacing', () => {
+  // The scanner now measures widths against a `sizing` scale. If the tokens
+  // a person adds in response land in `spacing`, that scale can never exist
+  // and the suppression telling them to build one is a dead end: the report
+  // says "0 distinct values" forever however many container tokens they
+  // write. The name rule is what closes that loop.
+  assert.equal(categorizeToken('--container-md', '768px'), 'sizing');
+  assert.equal(categorizeToken('--breakpoint-lg', '1024px'), 'sizing');
+  assert.equal(categorizeToken('--screen-xl', '1280px'), 'sizing');
+  assert.equal(categorizeToken('--max-width-prose', '65ch'), 'sizing');
+  assert.equal(categorizeToken('--avatar-height', '40px'), 'sizing');
+});
+
+test('a gap or inset token is still spacing', () => {
+  // The word `size` used to live in the spacing rule, which is why the
+  // sizing rule has to be read first. Everything the spacing rule owned on
+  // its own merits keeps it.
+  assert.equal(categorizeToken('--spacing-4', '16px'), 'spacing');
+  assert.equal(categorizeToken('--gap-sm', '8px'), 'spacing');
+  assert.equal(categorizeToken('--inset-1', '4px'), 'spacing');
+});
+
+test('groupTokens gives sizing a group of its own', () => {
+  const grouped = groupTokens({ '--container-md': '768px', '--spacing-4': '16px' });
+  assert.deepEqual(grouped.sizing, { '--container-md': '768px' });
+  assert.deepEqual(grouped.spacing, { '--spacing-4': '16px' });
+});
+
+test('a line-height or letter-spacing token is typography', () => {
+  // These two are the reason the sizing rule cannot simply claim every name
+  // containing "height": `--line-height` is a typographic ratio, not a
+  // dimension. They were already misfiled — `--letter-spacing` matched the
+  // spacing rule's "spacing" and `--line-height` matched nothing at all —
+  // and the scanner's own hint table has always read both as type, so this
+  // is the categoriser catching up to it rather than a new opinion.
+  assert.equal(categorizeToken('--line-height-tight', '1.25'), 'type');
+  assert.equal(categorizeToken('--letter-spacing-wide', '0.05em'), 'type');
 });

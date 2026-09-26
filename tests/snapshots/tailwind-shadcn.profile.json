@@ -41,6 +41,7 @@
       "--spacing-4": "1rem",
       "--spacing-6": "1.5rem"
     },
+    "sizing": {},
     "radius": {
       "--radius-md": "0.5rem"
     },

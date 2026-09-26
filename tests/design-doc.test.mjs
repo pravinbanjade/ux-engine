@@ -227,3 +227,15 @@ test('the rendered exceptions placeholder parses to zero entries and zero warnin
   assert.deepEqual(parsed.entries, []);
   assert.deepEqual(parsed.warnings, []);
 });
+
+test('a sizing group gets its own labelled section', () => {
+  // The token kinds and their headings live in two places, and a kind added
+  // to one and not the other renders "### undefined" over a real table.
+  const profile = sampleProfile();
+  const doc = renderDesignDoc({
+    ...profile,
+    tokens: { ...profile.tokens, sizing: { '--container-md': '768px' } },
+  });
+  assert.match(doc, /### Sizing/);
+  assert.doesNotMatch(doc, /### undefined/);
+});
