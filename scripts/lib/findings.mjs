@@ -203,10 +203,10 @@ export function renderReport(envelope, modes) {
       // unusable-scale entry — that was the only reason at the time. Defaulting
       // keeps an older findings file readable.
       if (s.reason === 'no-context') {
-        // No cause is named: the entry carries a count and nothing else, and
-        // the scanner does not record which contexts produced it. Listing
-        // likely ones tells a reader whose own literal was suppressed for a
-        // different reason that the line is not about them.
+        // The headline names likely causes, and the sample below names the
+        // real ones when the scanner recorded them. Together they tell a
+        // reader whose own literal was suppressed for a different reason
+        // that the line is not about them.
         //
         // An entry written before durations could be unmeasured has no
         // `kind`, and it is always a length — that was the only kind then.
@@ -214,6 +214,16 @@ export function renderReport(envelope, modes) {
           out.push(`- ${s.id} suppressed for ${s.count} duration-shaped value(s) outside any transition or animation — most are timeouts, status codes or prose, so none was measured against the motion scale`);
         } else {
           out.push(`- ${s.id} suppressed for ${s.count} length(s) whose surrounding code does not say which token group they belong to — no scale was applied, so no substitution was offered`);
+        }
+        // Which contexts the count is made of. Most are properties no scale
+        // covers, and belong here; a spacing, sizing, radius or type property
+        // in this list is a gap in the scanner's hint table, and this line is
+        // how one gets noticed. An entry written before the scanner kept
+        // contexts has none and renders as it always did.
+        if (s.contexts?.length) {
+          const shown = s.contexts.map((c) => `\`${c.context}\` (×${c.count})`).join(', ');
+          const hidden = (s.distinctContexts ?? s.contexts.length) - s.contexts.length;
+          out.push(`  - Written after: ${shown}${hidden > 0 ? ` — ${hidden} more not shown` : ''}`);
         }
       } else {
         const group = s.groups.join('|');

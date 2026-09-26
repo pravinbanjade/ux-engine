@@ -510,6 +510,19 @@ test('a no-context entry with no kind still renders as lengths', () => {
   assert.match(report, /UX-102 suppressed for 3 length\(s\)/);
 });
 
+// A count cannot tell a gap in the hint table from a property no scale
+// covers. The contexts can, so they are shown, and the "more" figure keeps
+// a cut list from reading as the whole set.
+test('a no-context suppression lists the contexts it was made of', () => {
+  const report = renderReport(envelopeWith([], {
+    suppressed: [{
+      id: 'UX-102', reason: 'no-context', kind: 'length', count: 170, distinctContexts: 3,
+      contexts: [{ context: 'border', count: 120 }, { context: 'box-shadow', count: 49 }],
+    }],
+  }), modes);
+  assert.match(report, /Written after: `border` \(×120\), `box-shadow` \(×49\) — 1 more not shown/);
+});
+
 test('a sizing suppression names the tokens that may be its scale under another name', () => {
   const report = renderReport(envelopeWith([], {
     suppressed: [{

@@ -92,7 +92,15 @@ UX-102 suppressed for 69 length(s) whose surrounding code does not say which tok
 This is why a shadow offset is never handed a border-radius token whose value
 happens to match. The trade is that a length whose property is not in the
 scanner's hint table is not checked at all, so the table is the thing that has
-to be right.
+to be right. The suppression lists what its lengths were written after:
+
+```
+  - Written after: `border` (×120), `box-shadow` (×49), `border-bottom` (×25), …
+```
+
+Border widths, shadows and transforms belong there, because no token scale
+covers them. A spacing, sizing, radius or type property in that list is a gap
+in the hint table and worth reporting.
 
 Durations follow the same rule. A number followed by `s` counts only inside a
 transition or animation, next to an easing keyword, or in a variable named for a

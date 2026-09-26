@@ -204,12 +204,19 @@ const SUPPRESSION_SAMPLE = 12;
 // contain — and the scanner has just read every one of those literals. Turn
 // the tally into the sample the report shows: most used first, ties broken
 // by length ascending so the tail of the list still reads as a scale rather
-// than an arbitrary order. A `no-context` entry has no literals map and
-// passes through untouched: those lengths belong to no group, so listing
-// them under a group heading would assert the membership the scanner
-// deliberately refused to guess.
+// than an arbitrary order. A `no-context` entry lists the contexts its
+// literals were written in instead of their values: those lengths belong to
+// no group, so listing them under a group heading would assert the
+// membership the scanner deliberately refused to guess.
+const CONTEXT_SAMPLE = 8;
 function summariseSuppression(entry) {
-  const { literals, ...rest } = entry;
+  const { literals, contextCounts, ...rest } = entry;
+  if (contextCounts) {
+    const contexts = [...contextCounts.entries()]
+      .map(([context, count]) => ({ context, count }))
+      .sort((a, b) => (b.count - a.count) || a.context.localeCompare(b.context));
+    return { ...rest, distinctContexts: contexts.length, contexts: contexts.slice(0, CONTEXT_SAMPLE) };
+  }
   if (!literals) return rest;
   const px = (value) => parseScalar(value)?.value ?? Number.POSITIVE_INFINITY;
   const values = [...literals.entries()]
@@ -316,7 +323,16 @@ const HINT_MATCHERS = [
   ]],
   ['radius', [
     bracketHintRe(['rounded']),
-    propertyHintRe(['border-radius']),
+    // Every corner longhand, physical and logical. Only the shorthand was
+    // listed, so a chat bubble's `border-bottom-left-radius: 2px` was a
+    // length of unknown group and went unmeasured.
+    propertyHintRe([
+      'border-radius',
+      'border-top-left-radius', 'border-top-right-radius',
+      'border-bottom-left-radius', 'border-bottom-right-radius',
+      'border-start-start-radius', 'border-start-end-radius',
+      'border-end-start-radius', 'border-end-end-radius',
+    ]),
   ]],
   // A dimension is not a gap. Both are lengths written in the same units, so
   // one hint covered both and every width competed for the spacing scale —
@@ -332,11 +348,14 @@ const HINT_MATCHERS = [
   // offsets: `translate`, `top/right/bottom/left` and `inset` move a box by
   // a gap rather than giving it a dimension.
   ['sizing', [
-    bracketHintRe(['w', 'h', 'size', 'min-w', 'max-w', 'min-h', 'max-h']),
+    bracketHintRe(['w', 'h', 'size', 'min-w', 'max-w', 'min-h', 'max-h', 'basis']),
+    // A flex basis is the item's starting width along the main axis, and in
+    // `flex: 0 0 8.5rem` the length is that basis — the two numbers before it
+    // are unitless factors, which SHORTHAND_VALUE lets pass.
     propertyHintRe([
       'width', 'height', 'min-width', 'max-width', 'min-height', 'max-height',
       'inline-size', 'block-size', 'min-inline-size', 'max-inline-size',
-      'min-block-size', 'max-block-size',
+      'min-block-size', 'max-block-size', 'flex-basis', 'flex',
     ]),
   ]],
   ['spacing', [
@@ -362,6 +381,10 @@ const HINT_MATCHERS = [
       'inset-block-start', 'inset-block-end',
       'inset-inline-start', 'inset-inline-end',
       'top', 'right', 'bottom', 'left',
+      'scroll-margin', 'scroll-margin-top', 'scroll-margin-right', 'scroll-margin-bottom',
+      'scroll-margin-left', 'scroll-margin-block', 'scroll-margin-inline',
+      'scroll-padding', 'scroll-padding-top', 'scroll-padding-right', 'scroll-padding-bottom',
+      'scroll-padding-left', 'scroll-padding-block', 'scroll-padding-inline',
     ]),
   ]],
 ];
@@ -397,6 +420,41 @@ function motionHint(line, matchIndex, matchLength) {
   if (EASING_AFTER.test(after)) return 'motion';
   if (LIST_ENTRY_BEFORE.test(line.slice(0, matchIndex)) && LIST_ENTRY_AFTER.test(after)) return 'motion';
   return null;
+}
+
+// What an unmeasured literal was written after, so the suppression can say
+// which contexts it is made of. A count alone cannot tell a missing entry in
+// the hint table (`border-bottom-left-radius`, until it was added) from a
+// property no scale should cover (`border: 1px solid`, `box-shadow`), and the
+// table is only as good as the evidence for growing it. The last property
+// name in the declaration wins — `box-shadow: 0 1px rgba(0, 0, 0, .1)` is a
+// shadow, not an rgba — and a utility's arbitrary-value bracket is named by
+// its prefix. A custom property declaration is one bucket: its name is the
+// author's, and a hundred distinct names would bury everything else.
+// The bracket's contents may hold spaces by the time this runs: the operator
+// rule has already turned `calc(100vh-16px)` into `calc(100vh 16px)`.
+const UNHINTED_BRACKET = /(?:^|[\s"'`])!?(?:[a-z0-9-]+:)*(-?[a-z][a-z0-9-]*)-\[[^\]"'`]*$/i;
+const UNHINTED_PROPERTY = /(?:^|[\s{;,(])['"`]?(--[\w-]+|-?[A-Za-z][\w-]*)['"`]?\s*:(?![:/])/g;
+// A style object's camelCase key is the property in kebab case, including a
+// vendor prefix's capital (`WebkitBackdropFilter`). Anything else —
+// `WEBHOOK_TIMEOUT`, `font-size` — is reported as written.
+const kebab = (raw) => {
+  const name = raw.replace(/^(Webkit|Moz|Ms)(?=[A-Z])/, (p) => p.toLowerCase());
+  if (!/^[a-z][a-zA-Z0-9]*$/.test(name)) return raw;
+  return name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`).replace(/^(webkit|moz|ms)-/, '-$1-');
+};
+
+function unhintedContext(line, matchIndex) {
+  const before = line.slice(0, matchIndex);
+  const bracket = UNHINTED_BRACKET.exec(before);
+  if (bracket) return `${bracket[1]}-[`;
+  const declaration = before.slice(Math.max(before.lastIndexOf(';'), before.lastIndexOf('{'), before.lastIndexOf('}')) + 1);
+  let last = null;
+  UNHINTED_PROPERTY.lastIndex = 0;
+  let m;
+  while ((m = UNHINTED_PROPERTY.exec(declaration))) last = m[1];
+  if (!last) return null;
+  return last.startsWith('--') ? 'custom property' : kebab(last);
 }
 
 function contextHint(line, matchIndex) {
@@ -460,7 +518,9 @@ function scanLiterals(text) {
         let hint = null;
         if (kind === 'length') hint = contextHint(line, m.index);
         else if (kind === 'time') hint = motionHint(line, m.index, m[0].length);
-        out.push({ line: index + 1, column: m.index + 1, value: m[0], kind, hint });
+        const literal = { line: index + 1, column: m.index + 1, value: m[0], kind, hint };
+        if (hint === null && (kind === 'length' || kind === 'time')) literal.context = unhintedContext(line, m.index);
+        out.push(literal);
       }
     }
   });
@@ -468,7 +528,7 @@ function scanLiterals(text) {
 }
 
 export function findLiteralsAt(text) {
-  return scanLiterals(text).map(({ hint, ...rest }) => rest);
+  return scanLiterals(text).map(({ hint, context, ...rest }) => rest);
 }
 
 // The narrow shape, kept because it is what the scanner's own tests assert
@@ -581,9 +641,14 @@ export function scanRepo(root, profile, { path = null, thresholds = DEFAULT_THRE
 
         if (groups === null) {
           const id = UNMEASURED_ID[literal.kind];
-          const tally = suppressed.get(`${id}|no-context`);
+          let tally = suppressed.get(`${id}|no-context`);
           if (tally) tally.count += 1;
-          else suppressed.set(`${id}|no-context`, { id, reason: 'no-context', kind: literal.kind, count: 1 });
+          else {
+            tally = { id, reason: 'no-context', kind: literal.kind, count: 1, contextCounts: new Map() };
+            suppressed.set(`${id}|no-context`, tally);
+          }
+          const context = literal.context ?? 'unrecognised';
+          tally.contextCounts.set(context, (tally.contextCounts.get(context) ?? 0) + 1);
           continue;
         }
         const candidates = {};
