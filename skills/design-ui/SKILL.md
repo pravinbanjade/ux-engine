@@ -82,6 +82,15 @@ was actually answered, and deciding whether a structure serves the answer.
    question. If one does not clear it, fix it before showing the user; you are
    the first reviewer, not a courier.
 
+   Then check that the data exists. For each thing the wireframe shows,
+   such as a count, a breakdown or a column, find where the UI would get
+   it: the API client, the endpoint, the schema. Anything that is not there
+   goes into the review as a line of its own, naming what is missing and
+   what would have to change to provide it, and the user approves knowing
+   it. A wireframe promising a per-page breakdown of signups, over a
+   subscriber table that records no page, was approved and then stopped
+   at implementation. It should have been said here.
+
 2. **Get approval before any code is written.** This gate does not move.
 
 3. **When the user asks for a change, decide which kind it is:**
@@ -154,3 +163,6 @@ was actually answered, and deciding whether a structure serves the answer.
 - Do not invent a mode id. Every finding cites an id that exists in the index.
 - Do not write anywhere outside `.ux-engine/wireframes/` and the source files
   the user approved.
+- Do not install dependencies to typecheck or lint. If `node_modules` is
+  missing, say that those checks were not run. An install fetches from the
+  network and can change the lockfile the user reviews.
