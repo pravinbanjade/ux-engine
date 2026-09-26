@@ -49,7 +49,7 @@ cannot do: deciding whether a component actually exhibits a failure mode.
 
    If the command exits 2, you named a surface kind that is not in the
    vocabulary. Fix the spelling and run it again; do not fall back to reading
-   the index, which holds 120 lines and would cost more context than the audit
+   the index, which holds 123 lines and would cost more context than the audit
    has to spare.
 
 5. **Read only the selected mode files, then judge.**

@@ -89,6 +89,21 @@ happens to match. The trade is that a length whose property is not in the
 scanner's hint table is not checked at all, so the table is the thing that has
 to be right.
 
+Durations follow the same rule. A number followed by `s` counts only inside a
+transition or animation, next to an easing keyword, or in a variable named for a
+duration. Otherwise it is usually a status code in a test name (`404s`), a
+timeout in prose, or an environment value:
+
+```
+UX-103 suppressed for 22 duration-shaped value(s) outside any transition or animation — most are timeouts, status codes or prose, so none was measured against the motion scale
+```
+
+Each length scale reports under its own mode: spacing under `UX-102`, sizing
+under `UX-121`, radius under `UX-122` and type under `UX-123`. When the sizing
+group is empty, the suppression also names any spacing tokens that were filed
+there because of their value rather than their name, since those are the likely
+place a repository's container tokens went.
+
 A suppression is not a pass in either case.
 
 ## Why `/ux-design` asks five questions first
@@ -112,7 +127,7 @@ while asking.
 ## The failure-mode library
 
 `skills/failure-modes/references/` holds one file per named failure mode —
-**120 of them**, IDs `UX-001` to `UX-120` — each with a Signal, why it fails, a
+**123 of them**, IDs `UX-001` to `UX-123` — each with a Signal, why it fails, a
 fix, and a counter-example saying when it is fine. Every ID sits in a range that
 declares its category, which lint enforces:
 
@@ -125,8 +140,12 @@ declares its category, which lint enforces:
 | forms | 061-075 |
 | data-display | 076-090 |
 | accessibility | 091-100 |
-| system-consistency | 101-110 |
+| system-consistency | 101-110, 121-123 |
 | conformance | 111-120 |
+
+IDs are published: they appear in findings files, exceptions and approved
+design docs. So a category that outgrows its range takes a new range at the end
+of the catalog, and no existing ID is renumbered.
 
 `INDEX.md` is the one-line-per-mode catalog. Nothing reads it whole: an audit
 names the surfaces in front of it and asks for the modes that could apply.
